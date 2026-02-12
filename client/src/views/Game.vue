@@ -143,13 +143,14 @@
             <!-- Guess input: 4 digit boxes with inline marks -->
             <div class="card mb-2">
               <h3 class="section-title">
-                {{ isMyTurn ? '输入猜测 (点 ▲▼ 标记)' : '对手思考中… 可先输入和标记' }}
+                {{ isMyTurn ? '输入猜测 (点击上方标记)' : '对手思考中… 可先输入和标记' }}
               </h3>
               <div class="guess-area">
                 <div class="digit-row">
                   <div v-for="pos in 4" :key="pos" class="digit-col">
-                    <div class="mark-top" @click.stop="togglePicker(pos-1, 'confirmed')">
+                    <div class="mark-top" @click.stop="togglePicker(pos-1)">
                       <span v-if="getConfirmedDigit(pos-1)!==null" class="mval m-green">{{ getConfirmedDigit(pos-1) }}</span>
+                      <span v-else-if="getPossibleDigits(pos-1).length" class="mval m-yellow">{{ getPossibleDigits(pos-1).join(' ') }}</span>
                       <span v-else class="mval m-hint">&#9650;</span>
                     </div>
                     <input
@@ -162,20 +163,12 @@
                       @keydown="onDigitKeydown(pos-1,$event)"
                       @focus="$event.target.select()"
                     />
-                    <div class="mark-bot" @click.stop="togglePicker(pos-1, 'possible')">
-                      <span v-if="getPossibleDigits(pos-1).length" class="mval m-yellow">{{ getPossibleDigits(pos-1).join(' ') }}</span>
-                      <span v-else class="mval m-hint">&#9660;</span>
-                    </div>
                     <!-- Floating popover -->
-                    <div v-if="pickerPos === pos-1" class="mark-popover" :class="pickerType === 'confirmed' ? 'pop-top' : 'pop-bot'" @click.stop>
-                      <div class="pop-title">{{ pickerType === 'confirmed' ? '确认' : '可能' }}</div>
+                    <div v-if="pickerPos === pos-1" class="mark-popover pop-top" @click.stop>
                       <div class="pop-digits">
                         <span v-for="d in getDigitsForPos(pos-1)" :key="d"
-                          class="pop-d" :class="{
-                            'pop-on-g': pickerType==='confirmed' && marks[pos-1][d]==='confirmed',
-                            'pop-on-y': pickerType==='possible' && marks[pos-1][d]==='possible'
-                          }"
-                          @click.stop="pickMark(pos-1,pickerType,d)">{{ d }}</span>
+                          class="pop-d" :class="getMarkClass(pos-1, d)"
+                          @click.stop="cycleMark(pos-1, d)">{{ d }}</span>
                       </div>
                     </div>
                   </div>
@@ -360,12 +353,11 @@ const lastResultLeaving = ref(false);
 
 // Mark picker
 const pickerPos = ref(-1);
-const pickerType = ref(null);
 
 // Timer
 let timerInterval = null;
 
-// Marks: marks[position][digit] = 'none' | 'possible' | 'confirmed'
+// Marks: marks[position][digit] = 'none' | 'possible' | 'confirmed' | 'excluded'
 const marks = reactive(
   Array.from({ length: 4 }, () => {
     const obj = {};
@@ -421,22 +413,27 @@ function getPossibleDigits(pos) {
   for (let d = 0; d <= 9; d++) { if (marks[pos][d] === 'possible') r.push(d); }
   return r;
 }
-function togglePicker(pos, type) {
-  if (pickerPos.value === pos && pickerType.value === type) {
-    pickerPos.value = -1; pickerType.value = null;
-  } else {
-    pickerPos.value = pos; pickerType.value = type;
-  }
+function togglePicker(pos) {
+  pickerPos.value = pickerPos.value === pos ? -1 : pos;
 }
-function pickMark(pos, type, digit) {
-  if (type === 'confirmed') {
+// Cycle: none → possible(黄) → confirmed(绿) → excluded(红) → none
+function cycleMark(pos, digit) {
+  const cur = marks[pos][digit];
+  const next = cur === 'none' ? 'possible' : cur === 'possible' ? 'confirmed' : cur === 'confirmed' ? 'excluded' : 'none';
+  // Confirmed is exclusive: clear other confirmed in same position
+  if (next === 'confirmed') {
     for (let d = 0; d <= 9; d++) { if (marks[pos][d] === 'confirmed') marks[pos][d] = 'none'; }
-    marks[pos][digit] = marks[pos][digit] === 'confirmed' ? 'none' : 'confirmed';
-  } else {
-    marks[pos][digit] = marks[pos][digit] === 'possible' ? 'none' : 'possible';
   }
+  marks[pos][digit] = next;
 }
-function closePicker() { pickerPos.value = -1; pickerType.value = null; }
+function getMarkClass(pos, digit) {
+  const s = marks[pos][digit];
+  if (s === 'confirmed') return 'pop-on-g';
+  if (s === 'possible') return 'pop-on-y';
+  if (s === 'excluded') return 'pop-on-r';
+  return '';
+}
+function closePicker() { pickerPos.value = -1; }
 
 // Digit box input
 function onDigitInput(pos, event) {
@@ -479,7 +476,7 @@ function confirmMyNumber() {
 function submitGuess() {
   if (!canGuess.value || !isMyTurn.value) return;
   guessSubmitted.value = true;
-  pickerPos.value = -1; pickerType.value = null;
+  pickerPos.value = -1;
   send({ type: 'guess', number: parseInt(digits.join(''), 10) });
 }
 
@@ -1121,8 +1118,8 @@ onUnmounted(() => {
 
 .digit-box:disabled { opacity: 0.5; }
 
-.mark-top, .mark-bot {
-  height: 20px;
+.mark-top {
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1140,7 +1137,7 @@ onUnmounted(() => {
   transition: transform 0.15s;
 }
 
-.mark-top:active .mval, .mark-bot:active .mval { transform: scale(0.9); }
+.mark-top:active .mval { transform: scale(0.9); }
 
 .m-green { color: var(--success); background: rgba(0,184,148,0.18); }
 .m-yellow { color: var(--warning); background: rgba(253,203,110,0.15); font-size: 0.65rem; }
@@ -1196,6 +1193,7 @@ onUnmounted(() => {
 .pop-d:active { transform: scale(0.92); }
 .pop-on-g { background: rgba(0,184,148,0.2); color: var(--success); border-color: var(--success); font-weight: 800; }
 .pop-on-y { background: rgba(253,203,110,0.2); color: var(--warning); border-color: var(--warning); font-weight: 800; }
+.pop-on-r { background: rgba(225,112,85,0.2); color: var(--danger); border-color: var(--danger); font-weight: 800; }
 
 .waiting-turn {
   display: flex;

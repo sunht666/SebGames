@@ -72,6 +72,17 @@ app.get('/api/room/:roomId', (req, res) => {
   });
 });
 
+// Create room — find an unused room ID
+app.get('/api/create-room', (_req, res) => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const id = Math.floor(Math.random() * 9000) + 1000;
+    if (!rooms.has(id)) {
+      return res.json({ roomId: id });
+    }
+  }
+  return res.status(503).json({ error: '暂时无法创建房间，请稍后再试' });
+});
+
 // Room listing for home page
 app.get('/api/rooms', (_req, res) => {
   const list = [];

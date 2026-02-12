@@ -29,8 +29,8 @@
         <button class="btn btn-primary btn-lg" :disabled="!canJoin" @click="joinRoom">
           加入房间
         </button>
-        <button class="btn btn-outline" @click="randomRoom">
-          随机房间号
+        <button class="btn btn-outline" :disabled="!hasName || creating" @click="createRoom">
+          {{ creating ? '创建中...' : '创建房间' }}
         </button>
       </div>
 
@@ -130,13 +130,31 @@ const activeRooms = computed(() =>
   )
 );
 
+const creating = ref(false);
+
+const hasName = computed(() => playerName.value.trim().length > 0);
+
 const canJoin = computed(() => {
   const id = parseInt(roomId.value, 10);
-  return playerName.value.trim().length > 0 && id >= 1000 && id <= 9999;
+  return hasName.value && id >= 1000 && id <= 9999;
 });
 
-function randomRoom() {
-  roomId.value = String(Math.floor(Math.random() * 9000) + 1000);
+async function createRoom() {
+  if (!hasName.value) return;
+  error.value = '';
+  creating.value = true;
+  try {
+    const res = await fetch('/api/create-room');
+    const data = await res.json();
+    if (data.roomId) {
+      saveAndGo(data.roomId);
+    } else {
+      error.value = data.error || '创建失败';
+    }
+  } catch {
+    error.value = '服务器连接失败';
+  }
+  creating.value = false;
 }
 
 async function fetchRooms() {
@@ -182,9 +200,14 @@ async function joinRoom() {
     // Server might be down, proceed anyway — WS will fail gracefully
   }
 
-  // Store name in sessionStorage for use in Game view
-  sessionStorage.setItem('playerName', playerName.value.trim());
-  router.push({ name: 'Game', params: { roomId: roomId.value } });
+  saveAndGo(roomId.value);
+}
+
+function saveAndGo(id) {
+  const name = playerName.value.trim();
+  sessionStorage.setItem('playerName', name);
+  localStorage.setItem('playerName', name);
+  router.push({ name: 'Game', params: { roomId: String(id) } });
 }
 
 function goSpectate(id) {
@@ -192,6 +215,8 @@ function goSpectate(id) {
 }
 
 onMounted(() => {
+  const saved = localStorage.getItem('playerName');
+  if (saved) playerName.value = saved;
   fetchRooms();
   refreshTimer = setInterval(fetchRooms, 5000);
 });
