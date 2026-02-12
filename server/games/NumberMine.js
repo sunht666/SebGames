@@ -1,4 +1,4 @@
-const TURN_TIME_LIMIT = 30000;
+const BaseGame = require('./BaseGame');
 
 const STATES = {
   WAITING: 'WAITING',
@@ -8,50 +8,29 @@ const STATES = {
   FINISHED: 'FINISHED',
 };
 
-class GameRoom {
-  constructor(roomId) {
-    this.roomId = roomId;
+class NumberMine extends BaseGame {
+  constructor(roomId, config = {}) {
+    super(roomId, config);
     this.players = [null, null];
-    this.state = STATES.WAITING;
     this.currentTurn = -1;
     this.turnTimer = null;
     this.turnStartTime = null;
     this.history = [];
     this.winner = -1;
     this.roundNumber = 0;
-    this.createdAt = Date.now();
-    this.spectators = [];
     this.setupTimer = null;
+
+    // Configurable turn time: 15-60s, default 30s
+    const t = parseInt(config.turnTime, 10);
+    this.turnTimeLimit = (!isNaN(t) && t >= 15 && t <= 60) ? t * 1000 : 30000;
   }
 
-  getPlayerCount() {
-    return this.players.filter((p) => p !== null).length;
+  get gameType() {
+    return 'number-mine';
   }
 
-  getPlayerIndex(playerId) {
-    return this.players.findIndex((p) => p && p.id === playerId);
-  }
-
-  broadcast(msg) {
-    const data = JSON.stringify(msg);
-    for (const p of this.players) {
-      if (p && p.ws.readyState === 1) {
-        p.ws.send(data);
-      }
-    }
-    // Also send to spectators (broadcast never contains player numbers)
-    for (const s of this.spectators) {
-      if (s.readyState === 1) {
-        s.send(data);
-      }
-    }
-  }
-
-  sendTo(playerIndex, msg) {
-    const player = this.players[playerIndex];
-    if (player && player.ws.readyState === 1) {
-      player.ws.send(JSON.stringify(msg));
-    }
+  get maxPlayers() {
+    return 2;
   }
 
   // ── Player management ──
@@ -79,10 +58,9 @@ class GameRoom {
       number: null,
       confirmed: false,
       dice: null,
-      guessLock: false, // prevent double-submit
+      guessLock: false,
     };
 
-    // Tell the joining player their slot info
     this.sendTo(slot, {
       type: 'room_joined',
       playerId,
@@ -91,7 +69,6 @@ class GameRoom {
       playerName,
     });
 
-    // Exchange player-joined notifications
     const other = 1 - slot;
     if (this.players[other]) {
       this.sendTo(other, {
@@ -105,7 +82,6 @@ class GameRoom {
         playerName: this.players[other].name,
       });
 
-      // Both present → move to SETUP (60s to confirm or room dissolves)
       this.state = STATES.SETUP;
       this.broadcast({ type: 'state_change', state: STATES.SETUP });
       this.startSetupTimer();
@@ -133,16 +109,13 @@ class GameRoom {
       if (this.players[other]) {
         this.state = STATES.FINISHED;
         this.winner = other;
-        this.sendTo(other, {
-          type: 'opponent_disconnected',
-        });
+        this.sendTo(other, { type: 'opponent_disconnected' });
         this.sendTo(other, {
           type: 'game_over',
           winner: other,
           reason: 'disconnect',
           numbers: null,
         });
-        // Notify spectators (reveal numbers since game is over)
         const specMsg = JSON.stringify({
           type: 'game_over',
           winner: other,
@@ -152,6 +125,7 @@ class GameRoom {
         for (const s of this.spectators) {
           if (s.readyState === 1) s.send(specMsg);
         }
+        this.scheduleDissolve();
       }
     } else {
       if (this.players[other]) {
@@ -159,6 +133,22 @@ class GameRoom {
         this.state = STATES.WAITING;
         this.sendTo(other, { type: 'state_change', state: STATES.WAITING });
       }
+    }
+  }
+
+  // ── Message dispatch ──
+
+  handleMessage(playerId, msg) {
+    switch (msg.type) {
+      case 'set_number':
+        this.setNumber(playerId, msg.number, !!msg.random);
+        break;
+      case 'confirm_number':
+        this.confirmNumber(playerId);
+        break;
+      case 'guess':
+        this.submitGuess(playerId, msg.number);
+        break;
     }
   }
 
@@ -179,8 +169,6 @@ class GameRoom {
 
     this.players[idx].number = number;
     this.players[idx].confirmed = false;
-
-    // Only send the number back to the owner — NEVER to the opponent
     this.sendTo(idx, { type: 'number_set', number });
   }
 
@@ -194,11 +182,8 @@ class GameRoom {
     }
 
     this.players[idx].confirmed = true;
-
-    // Tell both that this player has confirmed (no number leaked)
     this.broadcast({ type: 'player_confirmed', playerIndex: idx });
 
-    // Both confirmed → start dice
     if (this.players[0]?.confirmed && this.players[1]?.confirmed) {
       this.clearSetupTimer();
       this.startDiceRoll();
@@ -210,7 +195,6 @@ class GameRoom {
   startDiceRoll() {
     this.state = STATES.ROLLING;
     this.broadcast({ type: 'state_change', state: STATES.ROLLING });
-    // Short delay so clients see the state change first
     setTimeout(() => this.rollDice(), 800);
   }
 
@@ -225,7 +209,6 @@ class GameRoom {
     this.broadcast({ type: 'dice_result', dice: [d1, d2] });
 
     if (d1 === d2) {
-      // Tie — roll again
       setTimeout(() => {
         if (this.state === STATES.ROLLING) {
           this.broadcast({ type: 'dice_tie' });
@@ -249,7 +232,6 @@ class GameRoom {
 
   startTurn() {
     this.turnStartTime = Date.now();
-    // Reset guess lock for current player
     const p = this.players[this.currentTurn];
     if (p) p.guessLock = false;
 
@@ -257,11 +239,11 @@ class GameRoom {
       type: 'turn_start',
       playerIndex: this.currentTurn,
       roundNumber: this.roundNumber,
-      timeLimit: TURN_TIME_LIMIT,
+      timeLimit: this.turnTimeLimit,
     });
 
     this.clearTurnTimer();
-    this.turnTimer = setTimeout(() => this.handleTimeout(), TURN_TIME_LIMIT + 1000);
+    this.turnTimer = setTimeout(() => this.handleTimeout(), this.turnTimeLimit + 1000);
   }
 
   handleTimeout() {
@@ -293,15 +275,13 @@ class GameRoom {
       return;
     }
 
-    // Prevent double-submit within the same turn
     if (this.players[idx].guessLock) {
       this.sendTo(idx, { type: 'error', message: '本回合已提交' });
       return;
     }
 
-    // Server-side time enforcement
     const elapsed = Date.now() - this.turnStartTime;
-    if (elapsed > TURN_TIME_LIMIT + 2000) {
+    if (elapsed > this.turnTimeLimit + 2000) {
       this.sendTo(idx, { type: 'error', message: '已超时' });
       return;
     }
@@ -314,7 +294,6 @@ class GameRoom {
     this.players[idx].guessLock = true;
     this.clearTurnTimer();
 
-    // Compare with opponent's number — never expose the actual number
     const opponentNumber = this.players[1 - idx].number;
     const correctCount = this.compareNumbers(guess, opponentNumber);
 
@@ -337,13 +316,13 @@ class GameRoom {
     if (correctCount === 4) {
       this.state = STATES.FINISHED;
       this.winner = idx;
-      // Reveal both numbers only when the game is over
       this.broadcast({
         type: 'game_over',
         winner: idx,
         reason: 'guessed',
         numbers: [this.players[0].number, this.players[1].number],
       });
+      this.scheduleDissolve();
       return;
     }
 
@@ -380,7 +359,7 @@ class GameRoom {
     }
   }
 
-  // ── Setup timer (60s to confirm numbers or room dissolves) ──
+  // ── Setup timer ──
 
   startSetupTimer() {
     this.clearSetupTimer();
@@ -391,7 +370,6 @@ class GameRoom {
         type: 'room_dissolved',
         message: '60秒内未完成数字设置，房间已解散',
       });
-      // Null out players so WS close handlers don't re-trigger logic
       this.players = [null, null];
     }, 60000);
   }
@@ -405,12 +383,11 @@ class GameRoom {
 
   // ── Spectators ──
 
-  addSpectator(ws) {
-    this.spectators.push(ws);
-    // Send current public state to the spectator (NO player numbers)
+  getSpectateState() {
     const state = {
       type: 'spectate_joined',
       roomId: this.roomId,
+      gameType: this.gameType,
       state: this.state,
       players: this.players.map((p) =>
         p ? { name: p.name, confirmed: p.confirmed } : null
@@ -420,43 +397,16 @@ class GameRoom {
       history: this.history,
       winner: this.winner,
       spectatorCount: this.spectators.length,
+      turnTimeLimit: this.turnTimeLimit,
     };
-    // Include dice if in ROLLING or later
     if (this.players[0]?.dice != null) {
       state.dice = [this.players[0].dice, this.players[1].dice];
     }
-    // Include revealed numbers only if game is over
     if (this.state === 'FINISHED' && this.winner >= 0) {
       state.numbers = [this.players[0]?.number, this.players[1]?.number];
     }
-    ws.send(JSON.stringify(state));
-    this.broadcastSpectatorCount();
-  }
-
-  removeSpectator(ws) {
-    const idx = this.spectators.indexOf(ws);
-    if (idx !== -1) {
-      this.spectators.splice(idx, 1);
-      this.broadcastSpectatorCount();
-    }
-  }
-
-  broadcastSpectatorCount() {
-    const msg = JSON.stringify({
-      type: 'spectator_count',
-      count: this.spectators.length,
-    });
-    for (const p of this.players) {
-      if (p && p.ws.readyState === 1) p.ws.send(msg);
-    }
-    for (const s of this.spectators) {
-      if (s.readyState === 1) s.send(msg);
-    }
-  }
-
-  getSpectatorCount() {
-    return this.spectators.length;
+    return state;
   }
 }
 
-module.exports = GameRoom;
+module.exports = NumberMine;

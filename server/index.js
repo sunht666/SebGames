@@ -3,7 +3,7 @@ const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 const path = require('path');
-const GameRoom = require('./GameRoom');
+const { createGame, isValidGameType } = require('./games');
 
 const app = express();
 const server = createServer(app);
@@ -69,15 +69,26 @@ app.get('/api/room/:roomId', (req, res) => {
     exists: true,
     players: room.getPlayerCount(),
     state: room.state,
+    gameType: room.gameType,
+    maxPlayers: room.maxPlayers,
   });
 });
 
-// Create room — find an unused room ID
-app.get('/api/create-room', (_req, res) => {
+// Create room — POST with { gameType, config }
+app.post('/api/create-room', (req, res) => {
+  const { gameType = 'number-mine', config = {} } = req.body || {};
+
+  if (!isValidGameType(gameType)) {
+    return res.status(400).json({ error: '未知游戏类型' });
+  }
+
   for (let attempt = 0; attempt < 100; attempt++) {
     const id = Math.floor(Math.random() * 9000) + 1000;
     if (!rooms.has(id)) {
-      return res.json({ roomId: id });
+      const game = createGame(id, gameType, config);
+      game.onDissolve = (roomId) => rooms.delete(roomId);
+      rooms.set(id, game);
+      return res.json({ roomId: id, gameType });
     }
   }
   return res.status(503).json({ error: '暂时无法创建房间，请稍后再试' });
@@ -91,11 +102,13 @@ app.get('/api/rooms', (_req, res) => {
     if (playerCount === 0) continue;
     list.push({
       roomId: id,
+      gameType: room.gameType,
+      maxPlayers: room.maxPlayers,
       state: room.state,
       players: room.players.map((p) => (p ? { name: p.name } : null)),
       playerCount,
       spectatorCount: room.getSpectatorCount(),
-      roundNumber: room.roundNumber,
+      roundNumber: room.roundNumber || 0,
     });
   }
   res.json(list);
@@ -170,7 +183,9 @@ wss.on('connection', (ws, req) => {
 
         let room = rooms.get(roomId);
         if (!room) {
-          room = new GameRoom(roomId);
+          // Auto-create default NumberMine for backward compat
+          room = createGame(roomId, 'number-mine', {});
+          room.onDissolve = (rid) => rooms.delete(rid);
           rooms.set(roomId, room);
         }
 
@@ -180,24 +195,6 @@ wss.on('connection', (ws, req) => {
         } else {
           ws.send(JSON.stringify({ type: 'error', message: result.error }));
         }
-        break;
-      }
-
-      case 'set_number': {
-        if (!currentRoom) return;
-        currentRoom.setNumber(playerId, msg.number, !!msg.random);
-        break;
-      }
-
-      case 'confirm_number': {
-        if (!currentRoom) return;
-        currentRoom.confirmNumber(playerId);
-        break;
-      }
-
-      case 'guess': {
-        if (!currentRoom) return;
-        currentRoom.submitGuess(playerId, msg.number);
         break;
       }
 
@@ -241,8 +238,14 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
-      default:
-        ws.send(JSON.stringify({ type: 'error', message: '未知消息类型' }));
+      default: {
+        // Delegate game-specific messages to the room
+        if (currentRoom && !isSpectator) {
+          currentRoom.handleMessage(playerId, msg);
+        } else {
+          ws.send(JSON.stringify({ type: 'error', message: '未知消息类型' }));
+        }
+      }
     }
   }
 });
@@ -250,5 +253,5 @@ wss.on('connection', (ws, req) => {
 // ── Start ──
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });

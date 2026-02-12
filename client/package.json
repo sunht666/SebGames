@@ -1,5 +1,5 @@
 {
-  "name": "digital-minesweeper-client",
+  "name": "sebgames-client",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.4",
-    "vite": "^5.2.0"
+    "@vitejs/plugin-vue": "^4.6.2",
+    "vite": "^4.5.5"
   }
 }

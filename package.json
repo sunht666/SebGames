@@ -1,12 +1,12 @@
 {
-  "name": "digital-minesweeper",
+  "name": "sebgames",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && node index.js",
-    "dev:client": "cd client && npx vite --host",
-    "build": "cd client && npx vite build",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
     "start": "cd server && node index.js",
     "install:all": "npm install && cd server && npm install && cd ../client && npm install"
   },

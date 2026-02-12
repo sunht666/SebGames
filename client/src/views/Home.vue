@@ -1,8 +1,8 @@
 <template>
   <div class="home">
     <div class="home-card card">
-      <h1 class="title">数字扫雷</h1>
-      <p class="subtitle">双人数字猜谜对战游戏</p>
+      <h1 class="title">SebGames</h1>
+      <p class="subtitle">多人在线游戏平台</p>
 
       <div class="form-group mt-3">
         <label>你的昵称</label>
@@ -12,6 +12,47 @@
           placeholder="输入昵称"
           maxlength="10"
         />
+      </div>
+
+      <!-- Game type selector -->
+      <div class="game-selector mt-3">
+        <label>选择游戏</label>
+        <div class="game-cards">
+          <div
+            class="game-card"
+            :class="{ selected: selectedGame === 'number-mine' }"
+            @click="selectedGame = 'number-mine'"
+          >
+            <div class="game-card-icon">&#128163;</div>
+            <div class="game-card-name">数字排雷</div>
+            <div class="game-card-desc">2人猜数对战</div>
+          </div>
+          <div
+            class="game-card"
+            :class="{ selected: selectedGame === 'bluff-card' }"
+            @click="selectedGame = 'bluff-card'"
+          >
+            <div class="game-card-icon">&#127183;</div>
+            <div class="game-card-name">唬牌</div>
+            <div class="game-card-desc">2-6人吹牛牌</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-game config -->
+      <div v-if="selectedGame === 'number-mine'" class="game-config mt-2">
+        <label>回合限时: {{ nmTurnTime }}秒</label>
+        <input type="range" class="slider" v-model.number="nmTurnTime" min="15" max="60" step="5" />
+      </div>
+      <div v-if="selectedGame === 'bluff-card'" class="game-config mt-2">
+        <label>牌组数量: {{ bcDeckCount }}副</label>
+        <input type="range" class="slider" v-model.number="bcDeckCount" min="1" max="4" step="1" />
+        <label class="mt-1">回合限时: {{ bcTurnTime }}秒</label>
+        <input type="range" class="slider" v-model.number="bcTurnTime" min="15" max="30" step="5" />
+        <label class="mt-1 checkbox-row">
+          <input type="checkbox" v-model="bcShuffleMode" class="checkbox" />
+          <span>乱序模式 <small class="text-muted">(多抽1副牌随机丢弃,防算牌)</small></span>
+        </label>
       </div>
 
       <div class="form-group mt-2">
@@ -36,7 +77,7 @@
 
       <p v-if="error" class="error mt-2">
         {{ error }}
-        <button v-if="canSpectateRoom" class="btn btn-sm btn-accent ml-1" @click="goSpectate(roomId)">
+        <button v-if="canSpectateRoom" class="btn btn-sm btn-accent ml-1" @click="goSpectate(spectateRoomId, spectateGameType)">
           观战
         </button>
       </p>
@@ -64,10 +105,13 @@
             class="room-item room-waiting"
           >
             <div class="room-info">
-              <span class="room-id">{{ r.roomId }}</span>
+              <div class="room-info-top">
+                <span class="room-id">{{ r.roomId }}</span>
+                <span class="game-badge" :class="'badge-' + r.gameType">{{ gameLabel(r.gameType) }}</span>
+              </div>
               <span class="room-players">{{ r.players.filter(p=>p).map(p=>p.name).join('') }} 等待中</span>
             </div>
-            <button class="btn btn-primary btn-sm" @click="joinSpecificRoom(r.roomId)">加入</button>
+            <button class="btn btn-primary btn-sm" @click="joinSpecificRoom(r.roomId, r.gameType)">加入</button>
           </div>
           <!-- Active games (can spectate) -->
           <div
@@ -76,29 +120,45 @@
             class="room-item room-active"
           >
             <div class="room-info">
-              <span class="room-id">{{ r.roomId }}</span>
+              <div class="room-info-top">
+                <span class="room-id">{{ r.roomId }}</span>
+                <span class="game-badge" :class="'badge-' + r.gameType">{{ gameLabel(r.gameType) }}</span>
+              </div>
               <span class="room-players">
                 {{ r.players.filter(p=>p).map(p=>p.name).join(' vs ') }}
               </span>
               <span class="room-meta">
-                第{{ r.roundNumber }}回合
+                <template v-if="r.gameType === 'number-mine'">第{{ r.roundNumber }}回合</template>
+                <template v-else>游戏中</template>
                 <span v-if="r.spectatorCount" class="spec-count">{{ r.spectatorCount }}人观战</span>
               </span>
             </div>
-            <button class="btn btn-accent btn-sm" @click="goSpectate(r.roomId)">观战</button>
+            <button class="btn btn-accent btn-sm" @click="goSpectate(r.roomId, r.gameType)">观战</button>
           </div>
         </div>
       </div>
 
+      <!-- Rules -->
       <div class="rules mt-3">
-        <h3>游戏规则</h3>
-        <ul>
+        <h3>{{ selectedGame === 'number-mine' ? '数字排雷规则' : '唬牌规则' }}</h3>
+        <ul v-if="selectedGame === 'number-mine'">
           <li>两位玩家各自设定一个 4 位数 (1000-9999)</li>
           <li>掷骰子决定先手，点数大者先猜</li>
           <li>回合制轮流猜对方的数字</li>
-          <li>每回合限时 30 秒，超时跳过</li>
+          <li>每回合限时可自定义 (15-60秒)</li>
           <li>只有数字和位数都对才算正确</li>
           <li>先猜中全部 4 位的玩家获胜</li>
+        </ul>
+        <ul v-else>
+          <li>2-6 名玩家，使用 1-4 副扑克牌（含大小王）</li>
+          <li>房主可在 2-6 人时随时开始游戏</li>
+          <li>发牌后逆时针轮流出牌，每回合限时 15-30 秒</li>
+          <li>出牌时声明牌的点数和张数，牌面朝下</li>
+          <li>跟牌时必须声明与上家相同的点数</li>
+          <li>可以选择质疑上家：如果上家有任何一张不是声明的点数（王除外），质疑成功</li>
+          <li>质疑失败者或被揭穿者收走牌堆所有牌</li>
+          <li>乱序模式：从多 1 副牌中随机抽取，防止算牌</li>
+          <li>最先出完手牌者获胜，最后剩牌者失败</li>
         </ul>
       </div>
     </div>
@@ -114,14 +174,38 @@ const playerName = ref('');
 const roomId = ref('');
 const error = ref('');
 const canSpectateRoom = ref(false);
+const spectateRoomId = ref('');
+const spectateGameType = ref('number-mine');
+
+// Game selection
+const selectedGame = ref('number-mine');
+
+// Number mine config
+const nmTurnTime = ref(30);
+
+// Bluff card config
+const bcDeckCount = ref(1);
+const bcTurnTime = ref(20);
+const bcShuffleMode = ref(false);
 
 // Room list
 const roomList = ref([]);
 const roomsLoading = ref(false);
 let refreshTimer = null;
 
+const GAME_ROUTE_MAP = {
+  'number-mine': { play: 'NumberMine', spectate: 'SpectateNumberMine' },
+  'bluff-card': { play: 'BluffCard', spectate: 'SpectateBluffCard' },
+};
+
+function gameLabel(type) {
+  if (type === 'number-mine') return '数字排雷';
+  if (type === 'bluff-card') return '唬牌';
+  return type;
+}
+
 const waitingRooms = computed(() =>
-  roomList.value.filter((r) => r.state === 'WAITING' && r.playerCount === 1)
+  roomList.value.filter((r) => r.state === 'WAITING' && r.playerCount < r.maxPlayers)
 );
 
 const activeRooms = computed(() =>
@@ -139,15 +223,29 @@ const canJoin = computed(() => {
   return hasName.value && id >= 1000 && id <= 9999;
 });
 
+function getConfig() {
+  if (selectedGame.value === 'number-mine') {
+    return { turnTime: nmTurnTime.value };
+  }
+  if (selectedGame.value === 'bluff-card') {
+    return { deckCount: bcDeckCount.value, turnTime: bcTurnTime.value, shuffleMode: bcShuffleMode.value };
+  }
+  return {};
+}
+
 async function createRoom() {
   if (!hasName.value) return;
   error.value = '';
   creating.value = true;
   try {
-    const res = await fetch('/api/create-room');
+    const res = await fetch('/api/create-room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gameType: selectedGame.value, config: getConfig() }),
+    });
     const data = await res.json();
     if (data.roomId) {
-      saveAndGo(data.roomId);
+      saveAndGo(data.roomId, data.gameType || selectedGame.value);
     } else {
       error.value = data.error || '创建失败';
     }
@@ -168,14 +266,15 @@ async function fetchRooms() {
   roomsLoading.value = false;
 }
 
-function joinSpecificRoom(id) {
+function joinSpecificRoom(id, gameType) {
   if (!playerName.value.trim()) {
     error.value = '请先输入昵称';
     canSpectateRoom.value = false;
     return;
   }
   roomId.value = String(id);
-  joinRoom();
+  // Use the room's game type for routing
+  joinRoomWithType(id, gameType);
 }
 
 async function joinRoom() {
@@ -186,32 +285,49 @@ async function joinRoom() {
   try {
     const res = await fetch(`/api/room/${roomId.value}`);
     const data = await res.json();
-    if (data.exists && data.players >= 2) {
+    if (data.exists && data.players >= (data.maxPlayers || 2)) {
       error.value = '房间已满';
       canSpectateRoom.value = true;
+      spectateRoomId.value = roomId.value;
+      spectateGameType.value = data.gameType || 'number-mine';
       return;
     }
     if (data.exists && data.state !== 'WAITING') {
       error.value = '该房间游戏已开始';
       canSpectateRoom.value = true;
+      spectateRoomId.value = roomId.value;
+      spectateGameType.value = data.gameType || 'number-mine';
       return;
     }
+    // Route based on existing room's gameType, or selected game for new rooms
+    const gameType = data.exists ? (data.gameType || 'number-mine') : selectedGame.value;
+    saveAndGo(roomId.value, gameType);
   } catch {
-    // Server might be down, proceed anyway — WS will fail gracefully
+    // Server might be down, proceed with selected game type
+    saveAndGo(roomId.value, selectedGame.value);
   }
-
-  saveAndGo(roomId.value);
 }
 
-function saveAndGo(id) {
+function joinRoomWithType(id, gameType) {
   const name = playerName.value.trim();
   sessionStorage.setItem('playerName', name);
   localStorage.setItem('playerName', name);
-  router.push({ name: 'Game', params: { roomId: String(id) } });
+  const routes = GAME_ROUTE_MAP[gameType] || GAME_ROUTE_MAP['number-mine'];
+  router.push({ name: routes.play, params: { roomId: String(id) } });
 }
 
-function goSpectate(id) {
-  router.push({ name: 'Spectate', params: { roomId: String(id) } });
+function saveAndGo(id, gameType) {
+  const name = playerName.value.trim();
+  sessionStorage.setItem('playerName', name);
+  localStorage.setItem('playerName', name);
+  const routes = GAME_ROUTE_MAP[gameType] || GAME_ROUTE_MAP['number-mine'];
+  router.push({ name: routes.play, params: { roomId: String(id) } });
+}
+
+function goSpectate(id, gameType) {
+  const gt = gameType || 'number-mine';
+  const routes = GAME_ROUTE_MAP[gt] || GAME_ROUTE_MAP['number-mine'];
+  router.push({ name: routes.spectate, params: { roomId: String(id) } });
 }
 
 onMounted(() => {
@@ -236,7 +352,7 @@ onUnmounted(() => {
 }
 
 .home-card {
-  max-width: 460px;
+  max-width: 500px;
   width: 100%;
   animation: fadeIn 0.5s ease-out;
 }
@@ -268,6 +384,122 @@ onUnmounted(() => {
 
 .form-group .input {
   width: 100%;
+}
+
+/* ── Game selector ── */
+.game-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-selector label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.game-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.game-card {
+  padding: 14px 10px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.game-card:hover {
+  border-color: var(--primary);
+}
+
+.game-card.selected {
+  border-color: var(--primary);
+  background: rgba(108, 92, 231, 0.1);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.game-card-icon {
+  font-size: 1.8rem;
+  margin-bottom: 4px;
+}
+
+.game-card-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.game-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Game config ── */
+.game-config {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.game-config label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  outline: none;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: 2px solid var(--primary-light);
+}
+
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: 2px solid var(--primary-light);
 }
 
 .actions {
@@ -345,10 +577,34 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.room-info-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .room-id {
   font-weight: 700;
   font-size: 0.95rem;
   color: var(--text);
+}
+
+.game-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.badge-number-mine {
+  background: rgba(225, 112, 85, 0.2);
+  color: var(--danger);
+}
+
+.badge-bluff-card {
+  background: rgba(108, 92, 231, 0.2);
+  color: var(--primary-light);
 }
 
 .room-players {

@@ -319,6 +319,7 @@ const players = reactive([
 ]);
 const currentTurn = ref(-1);
 const timeLeft = ref(30);
+const turnTimeLimit = ref(30000);
 const roundNumber = ref(0);
 const history = reactive([]);
 const winner = ref(-1);
@@ -494,7 +495,7 @@ function leaveRoom() {
 // ── Timer ──
 function startTimer() {
   stopTimer();
-  timeLeft.value = 30;
+  timeLeft.value = Math.round(turnTimeLimit.value / 1000);
   timerInterval = setInterval(() => {
     timeLeft.value--;
     if (timeLeft.value <= 0) {
@@ -602,6 +603,7 @@ function handleServerMessage(msg) {
       winner.value = msg.winner;
       history.splice(0, history.length, ...msg.history);
       spectatorCount.value = msg.spectatorCount;
+      if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
       if (msg.dice) {
         diceValues[0] = msg.dice[0];
         diceValues[1] = msg.dice[1];
@@ -679,6 +681,7 @@ function handleServerMessage(msg) {
       currentTurn.value = msg.playerIndex;
       roundNumber.value = msg.roundNumber;
       guessSubmitted.value = false;
+      if (msg.timeLimit) turnTimeLimit.value = msg.timeLimit;
       startTimer();
       if (!props.spectateMode && msg.playerIndex === playerIndex.value) {
         // Only auto-focus first box if nothing pre-typed
@@ -745,6 +748,12 @@ function handleServerMessage(msg) {
       stopSetupCountdown();
       gameState.value = 'DISSOLVED';
       dissolveMessage.value = msg.message;
+      if (msg.redirect) {
+        setTimeout(() => {
+          cleanup();
+          router.push('/');
+        }, 3000);
+      }
       break;
 
     case 'opponent_disconnected':
