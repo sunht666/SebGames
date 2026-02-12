@@ -42,7 +42,7 @@ setInterval(() => {
 setInterval(() => {
   const now = Date.now();
   for (const [id, room] of rooms) {
-    if (room.getPlayerCount() === 0 && now - room.createdAt > 60000) {
+    if (room.getPlayerCount() === 0 && room.getSpectatorCount() === 0 && now - room.createdAt > 60000) {
       rooms.delete(id);
     }
   }
@@ -72,6 +72,24 @@ app.get('/api/room/:roomId', (req, res) => {
   });
 });
 
+// Room listing for home page
+app.get('/api/rooms', (_req, res) => {
+  const list = [];
+  for (const [id, room] of rooms) {
+    const playerCount = room.getPlayerCount();
+    if (playerCount === 0) continue;
+    list.push({
+      roomId: id,
+      state: room.state,
+      players: room.players.map((p) => (p ? { name: p.name } : null)),
+      playerCount,
+      spectatorCount: room.getSpectatorCount(),
+      roundNumber: room.roundNumber,
+    });
+  }
+  res.json(list);
+});
+
 // SPA fallback
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist/index.html'));
@@ -81,6 +99,7 @@ app.get('*', (_req, res) => {
 wss.on('connection', (ws, req) => {
   const playerId = crypto.randomUUID();
   let currentRoom = null;
+  let isSpectator = false;
 
   // Per-connection rate limit: max 10 messages per second
   let wsRate = { count: 0, resetTime: Date.now() + 1000 };
@@ -109,8 +128,12 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     if (currentRoom) {
-      currentRoom.removePlayer(playerId);
-      if (currentRoom.getPlayerCount() === 0) {
+      if (isSpectator) {
+        currentRoom.removeSpectator(ws);
+      } else {
+        currentRoom.removePlayer(playerId);
+      }
+      if (currentRoom.getPlayerCount() === 0 && currentRoom.getSpectatorCount() === 0) {
         rooms.delete(currentRoom.roomId);
       }
       currentRoom = null;
@@ -167,13 +190,42 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'spectate': {
+        if (currentRoom) {
+          ws.send(JSON.stringify({ type: 'error', message: '你已在房间中' }));
+          return;
+        }
+        const specRoomId = parseInt(msg.roomId, 10);
+        if (isNaN(specRoomId) || specRoomId < 1000 || specRoomId > 9999) {
+          ws.send(JSON.stringify({ type: 'error', message: '房间号必须在1000-9999之间' }));
+          return;
+        }
+        const specRoom = rooms.get(specRoomId);
+        if (!specRoom) {
+          ws.send(JSON.stringify({ type: 'error', message: '房间不存在' }));
+          return;
+        }
+        currentRoom = specRoom;
+        isSpectator = true;
+        specRoom.addSpectator(ws);
+        break;
+      }
+
       case 'leave_room': {
         if (!currentRoom) return;
-        currentRoom.removePlayer(playerId);
-        if (currentRoom.getPlayerCount() === 0) {
-          rooms.delete(currentRoom.roomId);
+        if (isSpectator) {
+          currentRoom.removeSpectator(ws);
+          if (currentRoom.getPlayerCount() === 0 && currentRoom.getSpectatorCount() === 0) {
+            rooms.delete(currentRoom.roomId);
+          }
+        } else {
+          currentRoom.removePlayer(playerId);
+          if (currentRoom.getPlayerCount() === 0 && currentRoom.getSpectatorCount() === 0) {
+            rooms.delete(currentRoom.roomId);
+          }
         }
         currentRoom = null;
+        isSpectator = false;
         ws.send(JSON.stringify({ type: 'room_left' }));
         break;
       }

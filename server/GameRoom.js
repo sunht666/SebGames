@@ -20,6 +20,8 @@ class GameRoom {
     this.winner = -1;
     this.roundNumber = 0;
     this.createdAt = Date.now();
+    this.spectators = [];
+    this.setupTimer = null;
   }
 
   getPlayerCount() {
@@ -35,6 +37,12 @@ class GameRoom {
     for (const p of this.players) {
       if (p && p.ws.readyState === 1) {
         p.ws.send(data);
+      }
+    }
+    // Also send to spectators (broadcast never contains player numbers)
+    for (const s of this.spectators) {
+      if (s.readyState === 1) {
+        s.send(data);
       }
     }
   }
@@ -97,9 +105,10 @@ class GameRoom {
         playerName: this.players[other].name,
       });
 
-      // Both present → move to SETUP
+      // Both present → move to SETUP (60s to confirm or room dissolves)
       this.state = STATES.SETUP;
       this.broadcast({ type: 'state_change', state: STATES.SETUP });
+      this.startSetupTimer();
     }
 
     return { success: true };
@@ -109,8 +118,10 @@ class GameRoom {
     const idx = this.getPlayerIndex(playerId);
     if (idx === -1) return;
 
+    const savedNumbers = [this.players[0]?.number || null, this.players[1]?.number || null];
     this.players[idx] = null;
     this.clearTurnTimer();
+    this.clearSetupTimer();
 
     const other = 1 - idx;
 
@@ -131,6 +142,16 @@ class GameRoom {
           reason: 'disconnect',
           numbers: null,
         });
+        // Notify spectators (reveal numbers since game is over)
+        const specMsg = JSON.stringify({
+          type: 'game_over',
+          winner: other,
+          reason: 'disconnect',
+          numbers: savedNumbers,
+        });
+        for (const s of this.spectators) {
+          if (s.readyState === 1) s.send(specMsg);
+        }
       }
     } else {
       if (this.players[other]) {
@@ -179,6 +200,7 @@ class GameRoom {
 
     // Both confirmed → start dice
     if (this.players[0]?.confirmed && this.players[1]?.confirmed) {
+      this.clearSetupTimer();
       this.startDiceRoll();
     }
   }
@@ -356,6 +378,84 @@ class GameRoom {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
     }
+  }
+
+  // ── Setup timer (60s to confirm numbers or room dissolves) ──
+
+  startSetupTimer() {
+    this.clearSetupTimer();
+    this.setupTimer = setTimeout(() => {
+      if (this.state !== STATES.SETUP) return;
+      this.state = STATES.FINISHED;
+      this.broadcast({
+        type: 'room_dissolved',
+        message: '60秒内未完成数字设置，房间已解散',
+      });
+      // Null out players so WS close handlers don't re-trigger logic
+      this.players = [null, null];
+    }, 60000);
+  }
+
+  clearSetupTimer() {
+    if (this.setupTimer) {
+      clearTimeout(this.setupTimer);
+      this.setupTimer = null;
+    }
+  }
+
+  // ── Spectators ──
+
+  addSpectator(ws) {
+    this.spectators.push(ws);
+    // Send current public state to the spectator (NO player numbers)
+    const state = {
+      type: 'spectate_joined',
+      roomId: this.roomId,
+      state: this.state,
+      players: this.players.map((p) =>
+        p ? { name: p.name, confirmed: p.confirmed } : null
+      ),
+      currentTurn: this.currentTurn,
+      roundNumber: this.roundNumber,
+      history: this.history,
+      winner: this.winner,
+      spectatorCount: this.spectators.length,
+    };
+    // Include dice if in ROLLING or later
+    if (this.players[0]?.dice != null) {
+      state.dice = [this.players[0].dice, this.players[1].dice];
+    }
+    // Include revealed numbers only if game is over
+    if (this.state === 'FINISHED' && this.winner >= 0) {
+      state.numbers = [this.players[0]?.number, this.players[1]?.number];
+    }
+    ws.send(JSON.stringify(state));
+    this.broadcastSpectatorCount();
+  }
+
+  removeSpectator(ws) {
+    const idx = this.spectators.indexOf(ws);
+    if (idx !== -1) {
+      this.spectators.splice(idx, 1);
+      this.broadcastSpectatorCount();
+    }
+  }
+
+  broadcastSpectatorCount() {
+    const msg = JSON.stringify({
+      type: 'spectator_count',
+      count: this.spectators.length,
+    });
+    for (const p of this.players) {
+      if (p && p.ws.readyState === 1) p.ws.send(msg);
+    }
+    for (const s of this.spectators) {
+      if (s.readyState === 1) s.send(msg);
+    }
+  }
+
+  getSpectatorCount() {
+    return this.spectators.length;
   }
 }
 

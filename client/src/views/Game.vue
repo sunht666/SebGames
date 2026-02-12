@@ -3,8 +3,11 @@
     <!-- ── Header ── -->
     <header class="game-header">
       <div class="header-left">
-        <button class="btn btn-outline btn-sm" @click="leaveRoom">退出</button>
+        <button class="btn btn-outline btn-sm" @click="leaveRoom">
+          {{ spectateMode ? '退出观战' : '退出' }}
+        </button>
         <span class="room-tag">房间 {{ roomId }}</span>
+        <span v-if="spectateMode" class="spec-tag">观战中</span>
       </div>
       <div class="header-center">
         <span class="player-label" :class="{ active: currentTurn === 0 }">
@@ -16,6 +19,7 @@
         </span>
       </div>
       <div class="header-right">
+        <span v-if="spectatorCount > 0" class="spec-badge">{{ spectatorCount }}人观战</span>
         <span v-if="gameState === 'PLAYING'" class="timer" :class="timerClass">
           {{ timeLeft }}s
         </span>
@@ -40,48 +44,66 @@
 
       <!-- Number setup -->
       <div v-else-if="gameState === 'SETUP'" class="state-panel fade-in">
-        <h2 class="text-center mb-2">设置你的秘密数字</h2>
-        <p class="text-center text-muted mb-2">选择一个 1000-9999 的四位数</p>
-
-        <div class="setup-area">
-          <div class="number-input-row">
-            <input
-              v-model="myNumberInput"
-              class="input input-lg"
-              placeholder="输入数字"
-              maxlength="4"
-              :disabled="myConfirmed"
-              @input="onNumberInput"
-            />
-            <button
-              class="btn btn-outline"
-              :disabled="myConfirmed"
-              @click="randomNumber"
-            >
-              随机
-            </button>
-          </div>
-
-          <div class="setup-actions mt-2">
-            <button
-              class="btn btn-success btn-lg"
-              :disabled="!canConfirm"
-              @click="confirmMyNumber"
-            >
-              {{ myConfirmed ? '已确认' : '确认数字' }}
-            </button>
-          </div>
-
+        <!-- Spectator view -->
+        <template v-if="spectateMode">
+          <h2 class="text-center mb-2">玩家正在设置数字...</h2>
+          <p class="text-center text-muted">设置限时: <span :class="setupTimeLeft <= 10 ? 'text-danger' : 'text-warning'">{{ setupTimeLeft }}s</span></p>
           <div class="confirm-status mt-2 text-center">
-            <span :class="myConfirmed ? 'text-success' : 'text-muted'">
-              {{ myConfirmed ? '你已确认' : '你未确认' }}
+            <span :class="players[0].confirmed ? 'text-success' : 'text-muted'">
+              {{ players[0].name || '玩家1' }} {{ players[0].confirmed ? '已确认' : '未确认' }}
             </span>
             <span class="mx">|</span>
-            <span :class="opponentConfirmed ? 'text-success' : 'text-muted'">
-              {{ opponentConfirmed ? '对手已确认' : '对手未确认' }}
+            <span :class="players[1].confirmed ? 'text-success' : 'text-muted'">
+              {{ players[1].name || '玩家2' }} {{ players[1].confirmed ? '已确认' : '未确认' }}
             </span>
           </div>
-        </div>
+        </template>
+        <!-- Player view -->
+        <template v-else>
+          <h2 class="text-center mb-2">设置你的秘密数字</h2>
+          <p class="text-center text-muted mb-1">选择一个 1000-9999 的四位数</p>
+          <p class="text-center">设置限时: <span :class="setupTimeLeft <= 10 ? 'text-danger' : 'text-warning'">{{ setupTimeLeft }}s</span></p>
+
+          <div class="setup-area">
+            <div class="number-input-row">
+              <input
+                v-model="myNumberInput"
+                class="input input-lg"
+                placeholder="输入数字"
+                maxlength="4"
+                :disabled="myConfirmed"
+                @input="onNumberInput"
+              />
+              <button
+                class="btn btn-outline"
+                :disabled="myConfirmed"
+                @click="randomNumber"
+              >
+                随机
+              </button>
+            </div>
+
+            <div class="setup-actions mt-2">
+              <button
+                class="btn btn-success btn-lg"
+                :disabled="!canConfirm"
+                @click="confirmMyNumber"
+              >
+                {{ myConfirmed ? '已确认' : '确认数字' }}
+              </button>
+            </div>
+
+            <div class="confirm-status mt-2 text-center">
+              <span :class="myConfirmed ? 'text-success' : 'text-muted'">
+                {{ myConfirmed ? '你已确认' : '你未确认' }}
+              </span>
+              <span class="mx">|</span>
+              <span :class="opponentConfirmed ? 'text-success' : 'text-muted'">
+                {{ opponentConfirmed ? '对手已确认' : '对手未确认' }}
+              </span>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Dice rolling -->
@@ -110,95 +132,91 @@
 
       <!-- Playing -->
       <div v-else-if="gameState === 'PLAYING'" class="play-area fade-in">
-        <div class="play-grid">
-          <!-- Left: My info + Guess input -->
-          <div class="play-left">
+        <div class="play-grid" :class="{ 'spec-grid': spectateMode }">
+          <!-- Left: My info + Guess input (hidden for spectators) -->
+          <div v-if="!spectateMode" class="play-left">
             <div class="card mb-2">
               <h3 class="section-title">我的数字</h3>
               <div class="my-number">{{ myNumber }}</div>
             </div>
 
-            <!-- Guess input (only when it's my turn) -->
+            <!-- Guess input: 4 digit boxes with inline marks -->
             <div class="card mb-2">
               <h3 class="section-title">
-                {{ isMyTurn ? '输入你的猜测' : '等待对手猜测...' }}
+                {{ isMyTurn ? '输入猜测 (点 ▲▼ 标记)' : '对手思考中… 可先输入和标记' }}
               </h3>
-              <div v-if="isMyTurn" class="guess-input-area">
-                <input
-                  ref="guessInputRef"
-                  v-model="guessInput"
-                  class="input input-lg"
-                  placeholder="猜测数字"
-                  maxlength="4"
-                  @input="onGuessInput"
-                  @keyup.enter="submitGuess"
-                />
-                <button
-                  class="btn btn-accent btn-lg mt-1"
-                  :disabled="!canGuess"
-                  @click="submitGuess"
-                >
-                  确定
-                </button>
-              </div>
-              <div v-else class="waiting-turn">
-                <div class="spinner-sm"></div>
-                <span>对手思考中...</span>
-              </div>
-            </div>
-
-            <!-- Marking board -->
-            <div class="card">
-              <h3 class="section-title">标记板</h3>
-              <p class="text-muted" style="font-size:0.8rem">点击数字切换: 灰=未知 / 黄=可能 / 绿=确认</p>
-              <div class="mark-board mt-1">
-                <div v-for="pos in 4" :key="pos" class="mark-col">
-                  <div class="mark-pos-label">第{{ pos }}位</div>
-                  <div
-                    v-for="d in getDigitsForPos(pos - 1)"
-                    :key="d"
-                    class="mark-digit"
-                    :class="markClass(pos - 1, d)"
-                    @click="toggleMark(pos - 1, d)"
-                  >
-                    {{ d }}
+              <div class="guess-area">
+                <div class="digit-row">
+                  <div v-for="pos in 4" :key="pos" class="digit-col">
+                    <div class="mark-top" @click.stop="togglePicker(pos-1, 'confirmed')">
+                      <span v-if="getConfirmedDigit(pos-1)!==null" class="mval m-green">{{ getConfirmedDigit(pos-1) }}</span>
+                      <span v-else class="mval m-hint">&#9650;</span>
+                    </div>
+                    <input
+                      :ref="el => { if(el) digitRefs[pos-1]=el }"
+                      class="digit-box"
+                      type="text" inputmode="numeric" maxlength="1"
+                      :value="digits[pos-1]"
+                      :disabled="guessSubmitted"
+                      @input="onDigitInput(pos-1,$event)"
+                      @keydown="onDigitKeydown(pos-1,$event)"
+                      @focus="$event.target.select()"
+                    />
+                    <div class="mark-bot" @click.stop="togglePicker(pos-1, 'possible')">
+                      <span v-if="getPossibleDigits(pos-1).length" class="mval m-yellow">{{ getPossibleDigits(pos-1).join(' ') }}</span>
+                      <span v-else class="mval m-hint">&#9660;</span>
+                    </div>
+                    <!-- Floating popover -->
+                    <div v-if="pickerPos === pos-1" class="mark-popover" :class="pickerType === 'confirmed' ? 'pop-top' : 'pop-bot'" @click.stop>
+                      <div class="pop-title">{{ pickerType === 'confirmed' ? '确认' : '可能' }}</div>
+                      <div class="pop-digits">
+                        <span v-for="d in getDigitsForPos(pos-1)" :key="d"
+                          class="pop-d" :class="{
+                            'pop-on-g': pickerType==='confirmed' && marks[pos-1][d]==='confirmed',
+                            'pop-on-y': pickerType==='possible' && marks[pos-1][d]==='possible'
+                          }"
+                          @click.stop="pickMark(pos-1,pickerType,d)">{{ d }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
+                <button
+                  class="btn mt-2" style="width:100%"
+                  :class="isMyTurn ? 'btn-accent' : 'btn-outline'"
+                  :disabled="!isMyTurn || !canGuess"
+                  @click="submitGuess"
+                >{{ isMyTurn ? '确定' : '对方思考中...' }}</button>
               </div>
             </div>
           </div>
 
-          <!-- Right: History -->
+          <!-- Right: History (two columns) -->
           <div class="play-right">
             <div class="card history-card">
               <h3 class="section-title">猜测历史</h3>
-              <div v-if="history.length === 0" class="text-muted text-center mt-2">
-                暂无记录
-              </div>
-              <div v-else class="history-list">
-                <div
-                  v-for="(entry, i) in history"
-                  :key="i"
-                  class="history-item"
-                  :class="{
-                    mine: entry.playerIndex === playerIndex,
-                    reveal: entry._animating
-                  }"
-                >
-                  <span class="hist-round">#{{ entry.roundNumber }}</span>
-                  <span class="hist-player" :class="entry.playerIndex === playerIndex ? 'text-primary' : 'text-accent'">
-                    {{ entry.playerIndex === playerIndex ? '我' : '对手' }}
-                  </span>
-                  <span v-if="entry.timeout" class="hist-guess text-muted">超时</span>
-                  <span v-else class="hist-guess">{{ entry.guess }}</span>
-                  <span v-if="!entry.timeout" class="hist-result">
-                    <span
-                      class="result-badge"
-                      :class="'result-' + entry.correctCount"
-                    >
-                      {{ entry.correctCount }}A
-                    </span>
-                  </span>
+              <div v-if="history.length === 0" class="text-muted text-center mt-2">暂无记录</div>
+              <div v-else class="history-cols">
+                <div class="hist-col">
+                  <div class="hist-col-title text-primary">{{ spectateMode ? (players[0]?.name || '玩家1') : '我' }}</div>
+                  <div class="history-list">
+                    <div v-for="(e, i) in col1History" :key="i" class="history-item mine" :class="{ reveal: e._animating }">
+                      <span class="hist-round">#{{ e.roundNumber }}</span>
+                      <span v-if="e.timeout" class="hist-guess text-muted">超时</span>
+                      <span v-else class="hist-guess">{{ e.guess }}</span>
+                      <span v-if="!e.timeout" class="hist-result"><span class="result-badge" :class="'result-'+e.correctCount">{{ e.correctCount }}A</span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="hist-col">
+                  <div class="hist-col-title text-accent">{{ spectateMode ? (players[1]?.name || '玩家2') : '对手' }}</div>
+                  <div class="history-list">
+                    <div v-for="(e, i) in col2History" :key="i" class="history-item" :class="{ reveal: e._animating }">
+                      <span class="hist-round">#{{ e.roundNumber }}</span>
+                      <span v-if="e.timeout" class="hist-guess text-muted">超时</span>
+                      <span v-else class="hist-guess">{{ e.guess }}</span>
+                      <span v-if="!e.timeout" class="hist-result"><span class="result-badge" :class="'result-'+e.correctCount">{{ e.correctCount }}A</span></span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -208,20 +226,28 @@
 
       <!-- Game over -->
       <div v-else-if="gameState === 'FINISHED'" class="state-panel fade-in text-center">
-        <div class="result-icon">{{ isWinner ? '&#127942;' : '&#128546;' }}</div>
-        <h2 :class="isWinner ? 'text-success' : 'text-danger'">
-          {{ isWinner ? '你赢了！' : '你输了！' }}
-        </h2>
+        <template v-if="spectateMode">
+          <div class="result-icon">&#127942;</div>
+          <h2 class="text-success">
+            {{ players[winner]?.name || '玩家' }} 获胜！
+          </h2>
+        </template>
+        <template v-else>
+          <div class="result-icon">{{ isWinner ? '&#127942;' : '&#128546;' }}</div>
+          <h2 :class="isWinner ? 'text-success' : 'text-danger'">
+            {{ isWinner ? '你赢了！' : '你输了！' }}
+          </h2>
+        </template>
         <p v-if="finishReason === 'disconnect'" class="text-muted mt-1">
-          对手已断开连接
+          {{ spectateMode ? '有玩家断开连接' : '对手已断开连接' }}
         </p>
         <div v-if="revealedNumbers" class="revealed-numbers mt-2">
           <div class="reveal-item">
-            <span class="text-muted">{{ players[0]?.name }}的数字:</span>
+            <span class="text-muted">{{ players[0]?.name || '玩家1' }}的数字:</span>
             <span class="reveal-num">{{ revealedNumbers[0] }}</span>
           </div>
           <div class="reveal-item">
-            <span class="text-muted">{{ players[1]?.name }}的数字:</span>
+            <span class="text-muted">{{ players[1]?.name || '玩家2' }}的数字:</span>
             <span class="reveal-num">{{ revealedNumbers[1] }}</span>
           </div>
         </div>
@@ -234,11 +260,11 @@
               v-for="(entry, i) in history"
               :key="i"
               class="history-item"
-              :class="{ mine: entry.playerIndex === playerIndex }"
+              :class="{ mine: !spectateMode && entry.playerIndex === playerIndex }"
             >
               <span class="hist-round">#{{ entry.roundNumber }}</span>
-              <span class="hist-player" :class="entry.playerIndex === playerIndex ? 'text-primary' : 'text-accent'">
-                {{ entry.playerIndex === playerIndex ? '我' : '对手' }}
+              <span class="hist-player" :class="entry.playerIndex === 0 ? 'text-primary' : 'text-accent'">
+                {{ spectateMode ? (players[entry.playerIndex]?.name || '玩家') : (entry.playerIndex === playerIndex ? '我' : '对手') }}
               </span>
               <span v-if="entry.timeout" class="hist-guess text-muted">超时</span>
               <span v-else class="hist-guess">{{ entry.guess }}</span>
@@ -254,11 +280,31 @@
         <button class="btn btn-primary btn-lg mt-3" @click="leaveRoom">返回大厅</button>
       </div>
 
+      <!-- Room dissolved -->
+      <div v-else-if="gameState === 'DISSOLVED'" class="state-panel fade-in text-center">
+        <div class="waiting-icon">&#9203;</div>
+        <h2 class="text-warning">房间已解散</h2>
+        <p class="text-muted mt-1">{{ dissolveMessage }}</p>
+        <button class="btn btn-primary btn-lg mt-3" @click="leaveRoom">返回大厅</button>
+      </div>
+
       <!-- Error -->
       <div v-if="errorMsg" class="toast-error" @click="errorMsg = ''">
         {{ errorMsg }}
       </div>
     </main>
+
+    <!-- Floating card result overlay -->
+    <div v-if="lastResult" class="card-overlay" :class="{ leaving: lastResultLeaving }" @click="dismissResult">
+      <div class="card-float" :class="'glow-' + lastResult.correctCount">
+        <div class="cf-label">
+          {{ spectateMode ? (players[lastResult.playerIdx]?.name || '玩家') + ' 猜了' : (lastResult.isMine ? '你猜了' : '对手猜了') }}
+        </div>
+        <div class="cf-guess">{{ lastResult.guess }}</div>
+        <div class="cf-divider"></div>
+        <div class="cf-count"><span class="cf-num">{{ lastResult.correctCount }}</span><span class="cf-a">A</span></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -266,7 +312,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-const props = defineProps({ roomId: String });
+const props = defineProps({ roomId: String, spectateMode: { type: Boolean, default: false } });
 const router = useRouter();
 
 // ── State ──
@@ -286,12 +332,16 @@ const winner = ref(-1);
 const finishReason = ref('');
 const revealedNumbers = ref(null);
 const errorMsg = ref('');
+const spectatorCount = ref(0);
+const dissolveMessage = ref('');
 
 // Setup
 const myNumber = ref(null);
 const myNumberInput = ref('');
 const myConfirmed = ref(false);
 const opponentConfirmed = ref(false);
+const setupTimeLeft = ref(60);
+let setupTimerInterval = null;
 
 // Dice
 const diceValues = reactive([null, null]);
@@ -299,10 +349,18 @@ const diceRolling = ref(false);
 const diceTie = ref(false);
 const firstPlayerIndex = ref(-1);
 
-// Guess
-const guessInput = ref('');
-const guessInputRef = ref(null);
+// Guess: 4 individual digit boxes
+const digits = reactive(['', '', '', '']);
+const digitRefs = ref([]);
 const guessSubmitted = ref(false);
+
+// Guess result card overlay
+const lastResult = ref(null);
+const lastResultLeaving = ref(false);
+
+// Mark picker
+const pickerPos = ref(-1);
+const pickerType = ref(null);
 
 // Timer
 let timerInterval = null;
@@ -320,6 +378,15 @@ const marks = reactive(
 const isMyTurn = computed(() => currentTurn.value === playerIndex.value);
 const isWinner = computed(() => winner.value === playerIndex.value);
 
+const col1History = computed(() => {
+  if (props.spectateMode) return history.filter(e => e.playerIndex === 0);
+  return history.filter(e => e.playerIndex === playerIndex.value);
+});
+const col2History = computed(() => {
+  if (props.spectateMode) return history.filter(e => e.playerIndex === 1);
+  return history.filter(e => e.playerIndex !== playerIndex.value);
+});
+
 const canConfirm = computed(() => {
   if (myConfirmed.value) return false;
   const n = parseInt(myNumberInput.value, 10);
@@ -328,8 +395,9 @@ const canConfirm = computed(() => {
 
 const canGuess = computed(() => {
   if (guessSubmitted.value) return false;
-  const n = parseInt(guessInput.value, 10);
-  return !isNaN(n) && n >= 1000 && n <= 9999;
+  if (digits.some(d => d === '')) return false;
+  const n = parseInt(digits.join(''), 10);
+  return n >= 1000 && n <= 9999;
 });
 
 const timerClass = computed(() => {
@@ -343,34 +411,51 @@ function getDigitsForPos(pos) {
   return pos === 0 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 }
 
-function markClass(pos, digit) {
-  const state = marks[pos][digit];
-  if (state === 'confirmed') return 'mark-confirmed';
-  if (state === 'possible') return 'mark-possible';
-  return 'mark-none';
+// Mark helpers
+function getConfirmedDigit(pos) {
+  for (let d = 0; d <= 9; d++) { if (marks[pos][d] === 'confirmed') return d; }
+  return null;
 }
-
-function toggleMark(pos, digit) {
-  const cur = marks[pos][digit];
-  if (cur === 'none') {
-    marks[pos][digit] = 'possible';
-  } else if (cur === 'possible') {
-    // If setting to confirmed, clear any other confirmed in this position
-    for (const d in marks[pos]) {
-      if (marks[pos][d] === 'confirmed') marks[pos][d] = 'none';
-    }
-    marks[pos][digit] = 'confirmed';
+function getPossibleDigits(pos) {
+  const r = [];
+  for (let d = 0; d <= 9; d++) { if (marks[pos][d] === 'possible') r.push(d); }
+  return r;
+}
+function togglePicker(pos, type) {
+  if (pickerPos.value === pos && pickerType.value === type) {
+    pickerPos.value = -1; pickerType.value = null;
   } else {
-    marks[pos][digit] = 'none';
+    pickerPos.value = pos; pickerType.value = type;
   }
+}
+function pickMark(pos, type, digit) {
+  if (type === 'confirmed') {
+    for (let d = 0; d <= 9; d++) { if (marks[pos][d] === 'confirmed') marks[pos][d] = 'none'; }
+    marks[pos][digit] = marks[pos][digit] === 'confirmed' ? 'none' : 'confirmed';
+  } else {
+    marks[pos][digit] = marks[pos][digit] === 'possible' ? 'none' : 'possible';
+  }
+}
+function closePicker() { pickerPos.value = -1; pickerType.value = null; }
+
+// Digit box input
+function onDigitInput(pos, event) {
+  const raw = event.target.value.replace(/\D/g, '');
+  const val = raw.slice(-1);
+  if (pos === 0 && val === '0') { event.target.value = digits[pos]; return; }
+  digits[pos] = val;
+  event.target.value = val;
+  if (val && pos < 3) nextTick(() => digitRefs.value[pos + 1]?.focus());
+}
+function onDigitKeydown(pos, event) {
+  if (event.key === 'Backspace' && digits[pos] === '' && pos > 0) {
+    nextTick(() => digitRefs.value[pos - 1]?.focus());
+  }
+  if (event.key === 'Enter') submitGuess();
 }
 
 function onNumberInput() {
   myNumberInput.value = myNumberInput.value.replace(/\D/g, '');
-}
-
-function onGuessInput() {
-  guessInput.value = guessInput.value.replace(/\D/g, '');
 }
 
 // ── Actions ──
@@ -394,7 +479,13 @@ function confirmMyNumber() {
 function submitGuess() {
   if (!canGuess.value || !isMyTurn.value) return;
   guessSubmitted.value = true;
-  send({ type: 'guess', number: parseInt(guessInput.value, 10) });
+  pickerPos.value = -1; pickerType.value = null;
+  send({ type: 'guess', number: parseInt(digits.join(''), 10) });
+}
+
+function dismissResult() {
+  lastResultLeaving.value = true;
+  setTimeout(() => { lastResult.value = null; lastResultLeaving.value = false; }, 400);
 }
 
 function leaveRoom() {
@@ -423,6 +514,26 @@ function stopTimer() {
   }
 }
 
+// ── Setup countdown ──
+function startSetupCountdown() {
+  stopSetupCountdown();
+  setupTimeLeft.value = 60;
+  setupTimerInterval = setInterval(() => {
+    setupTimeLeft.value--;
+    if (setupTimeLeft.value <= 0) {
+      setupTimeLeft.value = 0;
+      stopSetupCountdown();
+    }
+  }, 1000);
+}
+
+function stopSetupCountdown() {
+  if (setupTimerInterval) {
+    clearInterval(setupTimerInterval);
+    setupTimerInterval = null;
+  }
+}
+
 // ── WebSocket ──
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -446,7 +557,7 @@ function connect() {
   };
 
   socket.onclose = () => {
-    if (gameState.value !== 'FINISHED') {
+    if (gameState.value !== 'FINISHED' && gameState.value !== 'DISSOLVED') {
       gameState.value = 'CONNECTING';
       // Try to reconnect after 2s
       setTimeout(() => {
@@ -464,12 +575,15 @@ function handleServerMessage(msg) {
   switch (msg.type) {
     case 'connected':
       playerId.value = msg.playerId;
-      // Join the room
-      send({
-        type: 'join_room',
-        roomId: parseInt(props.roomId, 10),
-        playerName: sessionStorage.getItem('playerName') || '玩家',
-      });
+      if (props.spectateMode) {
+        send({ type: 'spectate', roomId: parseInt(props.roomId, 10) });
+      } else {
+        send({
+          type: 'join_room',
+          roomId: parseInt(props.roomId, 10),
+          playerName: sessionStorage.getItem('playerName') || '玩家',
+        });
+      }
       break;
 
     case 'room_joined':
@@ -478,12 +592,49 @@ function handleServerMessage(msg) {
       gameState.value = 'WAITING';
       break;
 
+    case 'spectate_joined':
+      gameState.value = msg.state;
+      for (let i = 0; i < 2; i++) {
+        if (msg.players[i]) {
+          players[i].name = msg.players[i].name;
+          players[i].confirmed = msg.players[i].confirmed;
+        }
+      }
+      currentTurn.value = msg.currentTurn;
+      roundNumber.value = msg.roundNumber;
+      winner.value = msg.winner;
+      history.splice(0, history.length, ...msg.history);
+      spectatorCount.value = msg.spectatorCount;
+      if (msg.dice) {
+        diceValues[0] = msg.dice[0];
+        diceValues[1] = msg.dice[1];
+      }
+      if (msg.numbers) {
+        revealedNumbers.value = msg.numbers;
+      }
+      if (msg.state === 'PLAYING') {
+        startTimer();
+      }
+      if (msg.state === 'SETUP') {
+        startSetupCountdown();
+      }
+      break;
+
+    case 'spectator_count':
+      spectatorCount.value = msg.count;
+      break;
+
     case 'player_joined':
       players[msg.playerIndex].name = msg.playerName;
       break;
 
     case 'state_change':
       gameState.value = msg.state;
+      if (msg.state === 'SETUP') {
+        startSetupCountdown();
+      } else {
+        stopSetupCountdown();
+      }
       if (msg.state === 'ROLLING') {
         diceRolling.value = true;
         diceValues[0] = null;
@@ -530,12 +681,13 @@ function handleServerMessage(msg) {
     case 'turn_start':
       currentTurn.value = msg.playerIndex;
       roundNumber.value = msg.roundNumber;
-      guessInput.value = '';
       guessSubmitted.value = false;
       startTimer();
-      // Focus the input when it's my turn
-      if (msg.playerIndex === playerIndex.value) {
-        nextTick(() => guessInputRef.value?.focus());
+      if (!props.spectateMode && msg.playerIndex === playerIndex.value) {
+        // Only auto-focus first box if nothing pre-typed
+        if (digits.every(d => d === '')) {
+          nextTick(() => digitRefs.value[0]?.focus());
+        }
       }
       break;
 
@@ -549,10 +701,24 @@ function handleServerMessage(msg) {
         _animating: true,
       };
       history.push(entry);
-      // Remove animation flag after a bit
+      setTimeout(() => { entry._animating = false; }, 800);
+
+      // Clear my digit boxes after my guess is confirmed
+      if (!props.spectateMode && msg.playerIndex === playerIndex.value) {
+        digits[0] = ''; digits[1] = ''; digits[2] = ''; digits[3] = '';
+      }
+      // Show floating card overlay
+      lastResult.value = {
+        guess: msg.guess,
+        correctCount: msg.correctCount,
+        isMine: msg.playerIndex === playerIndex.value,
+        playerIdx: msg.playerIndex,
+      };
+      lastResultLeaving.value = false;
       setTimeout(() => {
-        entry._animating = false;
-      }, 800);
+        lastResultLeaving.value = true;
+        setTimeout(() => { lastResult.value = null; lastResultLeaving.value = false; }, 500);
+      }, 2200);
       break;
     }
 
@@ -570,10 +736,18 @@ function handleServerMessage(msg) {
 
     case 'game_over':
       stopTimer();
+      stopSetupCountdown();
       gameState.value = 'FINISHED';
       winner.value = msg.winner;
       finishReason.value = msg.reason;
       revealedNumbers.value = msg.numbers;
+      break;
+
+    case 'room_dissolved':
+      stopTimer();
+      stopSetupCountdown();
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = msg.message;
       break;
 
     case 'opponent_disconnected':
@@ -599,6 +773,7 @@ function handleServerMessage(msg) {
 
 function cleanup() {
   stopTimer();
+  stopSetupCountdown();
   if (ws.value) {
     ws.value.onclose = null;
     ws.value.close();
@@ -606,15 +781,38 @@ function cleanup() {
   }
 }
 
+// ── Visibility change: fix mobile background disconnect ──
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return;
+  if (gameState.value === 'FINISHED' || gameState.value === 'DISSOLVED') return;
+
+  // WS died while in background → reconnect immediately
+  if (!ws.value || ws.value.readyState !== WebSocket.OPEN) {
+    gameState.value = 'CONNECTING';
+    connect();
+    return;
+  }
+
+  // WS still alive but UI state may be stale
+  if (!props.spectateMode && gameState.value === 'PLAYING' && isMyTurn.value) {
+    guessSubmitted.value = false;
+    nextTick(() => digitRefs.value[0]?.focus());
+  }
+}
+
 onMounted(() => {
-  if (!sessionStorage.getItem('playerName')) {
+  if (!props.spectateMode && !sessionStorage.getItem('playerName')) {
     router.push('/');
     return;
   }
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  document.addEventListener('click', closePicker);
   connect();
 });
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  document.removeEventListener('click', closePicker);
   cleanup();
 });
 </script>
@@ -647,6 +845,15 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
+.spec-tag {
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: rgba(253, 121, 168, 0.15);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
 .header-center {
   display: flex;
   align-items: center;
@@ -676,6 +883,18 @@ onUnmounted(() => {
 .header-right {
   min-width: 60px;
   text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spec-badge {
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: rgba(253, 121, 168, 0.12);
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .timer {
@@ -751,10 +970,12 @@ onUnmounted(() => {
 .number-input-row {
   display: flex;
   gap: 10px;
+  min-width: 0;
 }
 
 .number-input-row .input {
   flex: 1;
+  min-width: 0;
 }
 
 .setup-actions {
@@ -831,6 +1052,12 @@ onUnmounted(() => {
   gap: 20px;
 }
 
+.play-grid.spec-grid {
+  grid-template-columns: 1fr;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
 @media (max-width: 700px) {
   .play-grid {
     grid-template-columns: 1fr;
@@ -855,14 +1082,120 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
 }
 
-/* ── Guess input ── */
-.guess-input-area {
-  text-align: center;
+/* ── Digit boxes + marks ── */
+.guess-area { text-align: center; }
+
+.digit-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
 }
 
-.guess-input-area .btn {
+.digit-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 56px;
+}
+
+.digit-box {
+  width: 52px;
+  height: 56px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  caret-color: var(--primary);
+  transition: border-color 0.2s;
+}
+
+.digit-box:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(108,92,231,0.25);
+}
+
+.digit-box:disabled { opacity: 0.5; }
+
+.mark-top, .mark-bot {
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
   width: 100%;
 }
+
+.mval {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.2;
+  transition: transform 0.15s;
+}
+
+.mark-top:active .mval, .mark-bot:active .mval { transform: scale(0.9); }
+
+.m-green { color: var(--success); background: rgba(0,184,148,0.18); }
+.m-yellow { color: var(--warning); background: rgba(253,203,110,0.15); font-size: 0.65rem; }
+.m-hint { color: var(--text-muted); opacity: 0.25; font-size: 0.55rem; }
+
+/* ── Floating mark popover ── */
+.mark-popover {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  width: 160px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  animation: popoverIn 0.15s ease-out;
+}
+.pop-top { bottom: calc(100% + 4px); }
+.pop-bot { top: calc(100% + 4px); }
+
+@keyframes popoverIn {
+  from { opacity: 0; transform: translateX(-50%) scale(0.9); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+.pop-title {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.pop-digits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+}
+
+.pop-d {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; font-weight: 600;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.1s;
+}
+.pop-d:active { transform: scale(0.92); }
+.pop-on-g { background: rgba(0,184,148,0.2); color: var(--success); border-color: var(--success); font-weight: 800; }
+.pop-on-y { background: rgba(253,203,110,0.2); color: var(--warning); border-color: var(--warning); font-weight: 800; }
 
 .waiting-turn {
   display: flex;
@@ -873,84 +1206,41 @@ onUnmounted(() => {
   color: var(--text-muted);
 }
 
-/* ── Mark board ── */
-.mark-board {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.mark-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
-
-.mark-pos-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-.mark-digit {
-  width: 30px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-  user-select: none;
-}
-
-.mark-none {
-  background: var(--surface);
-  color: var(--text-muted);
-  border: 1px solid transparent;
-}
-
-.mark-none:hover {
-  border-color: var(--border);
-}
-
-.mark-possible {
-  background: rgba(253, 203, 110, 0.2);
-  color: var(--warning);
-  border: 1px solid var(--warning);
-}
-
-.mark-confirmed {
-  background: rgba(0, 184, 148, 0.2);
-  color: var(--success);
-  border: 1px solid var(--success);
-  font-weight: 800;
-}
-
-/* ── History ── */
+/* ── History (two columns) ── */
 .history-card {
   max-height: calc(100vh - 160px);
   overflow-y: auto;
 }
 
+.history-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hist-col-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .history-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 5px 8px;
   background: var(--surface);
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   border-left: 3px solid transparent;
 }
 
@@ -1040,6 +1330,144 @@ onUnmounted(() => {
   font-weight: 800;
   letter-spacing: 0.2em;
   color: var(--primary-light);
+}
+
+/* ── Floating card overlay ── */
+.card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(3px);
+  animation: overlayIn 0.3s ease-out;
+}
+.card-overlay.leaving {
+  animation: overlayOut 0.45s ease-in forwards;
+}
+
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlayOut { to { opacity: 0; } }
+
+.card-float {
+  width: 200px;
+  padding: 28px 20px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--card) 0%, var(--surface) 100%);
+  border: 1.5px solid var(--border);
+  text-align: center;
+  animation: cardDeal 0.6s cubic-bezier(0.17, 0.67, 0.29, 1.3) both;
+  transform-style: preserve-3d;
+}
+.card-overlay.leaving .card-float {
+  animation: cardFly 0.45s ease-in forwards;
+}
+
+@keyframes cardDeal {
+  0% {
+    transform: perspective(800px) rotateY(180deg) scale(0.3) translateY(60px);
+    opacity: 0;
+    box-shadow: none;
+  }
+  55% {
+    transform: perspective(800px) rotateY(-15deg) scale(1.06) translateY(-10px);
+    opacity: 1;
+  }
+  75% {
+    transform: perspective(800px) rotateY(5deg) scale(0.98) translateY(0);
+  }
+  100% {
+    transform: perspective(800px) rotateY(0deg) scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes cardFly {
+  to {
+    transform: perspective(800px) rotateX(-15deg) scale(0.5) translateY(-120px);
+    opacity: 0;
+  }
+}
+
+.cf-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
+.cf-guess {
+  font-size: 1.8rem; font-weight: 800; letter-spacing: 0.35em;
+  margin-bottom: 8px;
+}
+.cf-divider {
+  width: 40px; height: 2px; margin: 0 auto 10px;
+  background: var(--border); border-radius: 1px;
+}
+.cf-count { display: inline-flex; align-items: baseline; gap: 2px; }
+.cf-num { font-size: 2.8rem; font-weight: 900; text-shadow: 0 0 25px currentColor; }
+.cf-a { font-size: 1.2rem; font-weight: 700; }
+
+.glow-0 { box-shadow: 0 8px 40px rgba(99,110,114,0.2); }
+.glow-0 .cf-num, .glow-0 .cf-a { color: var(--text-muted); }
+.glow-1 { box-shadow: 0 8px 40px rgba(225,112,85,0.3); border-color: var(--danger); }
+.glow-1 .cf-num, .glow-1 .cf-a { color: var(--danger); }
+.glow-2 { box-shadow: 0 8px 40px rgba(253,203,110,0.35); border-color: var(--warning); }
+.glow-2 .cf-num, .glow-2 .cf-a { color: var(--warning); }
+.glow-3 { box-shadow: 0 8px 40px rgba(162,155,254,0.4); border-color: var(--primary-light); }
+.glow-3 .cf-num, .glow-3 .cf-a { color: var(--primary-light); }
+.glow-4 {
+  box-shadow: 0 8px 50px rgba(0,184,148,0.5), 0 0 80px rgba(0,184,148,0.2);
+  border-color: var(--success); background: linear-gradient(145deg, rgba(0,184,148,0.12), var(--surface));
+}
+.glow-4 .cf-num, .glow-4 .cf-a { color: var(--success); }
+
+/* ── Mobile ── */
+.game-page {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+@media (max-width: 700px) {
+  .game-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .header-left { order: 1; }
+  .header-right { order: 2; }
+  .header-center {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    gap: 6px;
+  }
+  .player-label {
+    font-size: 0.8rem;
+    padding: 3px 8px;
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .game-main { padding: 10px; }
+  .card { padding: 14px 12px; }
+  .setup-area { max-width: 100%; }
+  .number-input-row .input { letter-spacing: 0.15em; font-size: 1.1rem; padding: 10px; }
+  .my-number { font-size: 1.5rem; padding: 8px; letter-spacing: 0.2em; }
+  .digit-row { gap: 6px; }
+  .digit-col { width: 48px; }
+  .digit-box { width: 44px; height: 48px; font-size: 1.3rem; }
+  .mval { font-size: 0.65rem; }
+  .mark-popover { width: 140px; padding: 5px 6px; }
+  .pop-d { width: 22px; height: 22px; font-size: 0.7rem; }
+  .history-card { max-height: none; }
+  .history-cols { gap: 6px; }
+  .history-item { gap: 4px; padding: 4px 6px; font-size: 0.78rem; }
+  .hist-round { min-width: 22px; font-size: 0.7rem; }
+  .card-float { width: 170px; padding: 22px 16px; }
+  .cf-guess { font-size: 1.4rem; }
+  .cf-num { font-size: 2.2rem; }
+  .dice { width: 60px; height: 60px; font-size: 1.6rem; }
+  .state-panel { margin: 30px auto; }
+  .play-grid { gap: 12px; }
+  .spec-tag { display: none; }
 }
 
 /* ── Toast ── */
