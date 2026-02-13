@@ -382,21 +382,8 @@ class BluffCard extends BaseGame {
     // Broadcast updated player list (card counts)
     this.broadcastPlayerList();
 
-    // Check win condition — first player to empty hand wins, game ends
-    if (player.hand.length === 0) {
-      this.winners.push(idx);
-      // Stop all timers and block further actions immediately
-      if (this.turnTimer) { clearTimeout(this.turnTimer); this.turnTimer = null; }
-      this.state = STATES.FINISHED;
-      this.broadcast({
-        type: 'player_won',
-        playerIndex: idx,
-        playerName: player.name,
-      });
-      // Delay so everyone sees the last play before game over
-      setTimeout(() => this.endGame(), 2500);
-      return;
-    }
+    // Don't check win here — other players must be allowed to challenge first.
+    // Win is checked at round boundaries (full rotation / challenge resolution).
 
     // Advance turn
     this.advanceTurn();
@@ -473,13 +460,23 @@ class BluffCard extends BaseGame {
 
     this.broadcastPlayerList();
 
-    // Winner starts next round — after 3s delay
+    // After challenge, check if any player has 0 cards → they win
+    const winPi = this.playOrder.find(pi => this.players[pi] && this.players[pi].hand.length === 0);
+    if (winPi !== undefined) {
+      this.winners.push(winPi);
+      this.challengeTimer = setTimeout(() => {
+        this.challengeTimer = null;
+        this.endGame();
+      }, 4000);
+      return;
+    }
+
+    // Winner starts next round — after 4s delay
     const winnerPoIdx = this.playOrder.indexOf(winnerIdx);
     if (winnerPoIdx !== -1) {
       this.currentTurnIdx = winnerPoIdx;
     }
 
-    // Delay before next turn (4s to view all pile cards)
     this.challengeTimer = setTimeout(() => {
       this.challengeTimer = null;
       this.broadcast({ type: 'new_round', roundNumber: this.roundNumber });
@@ -525,7 +522,17 @@ class BluffCard extends BaseGame {
       const lastPlayerIdx = this.lastPlay.playerIndex;
       const currentPlayerIdx = this.playOrder[this.currentTurnIdx];
       if (currentPlayerIdx === lastPlayerIdx) {
-        // Full rotation — clear pile, new round
+        // Full rotation — no one challenged. Check if any player has 0 cards → they win.
+        const winPi = this.playOrder.find(pi => this.players[pi] && this.players[pi].hand.length === 0);
+        if (winPi !== undefined) {
+          this.winners.push(winPi);
+          if (this.turnTimer) { clearTimeout(this.turnTimer); this.turnTimer = null; }
+          this.state = STATES.FINISHED;
+          this.broadcast({ type: 'player_won', playerIndex: winPi, playerName: this.players[winPi].name });
+          setTimeout(() => this.endGame(), 2500);
+          return;
+        }
+        // Clear pile, new round
         this.pile = [];
         this.pileCards = [];
         this.lastPlay = null;
