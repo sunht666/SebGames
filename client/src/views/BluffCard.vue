@@ -126,7 +126,6 @@
                 :class="{ selected: selectedCards.has(card.id), dealing: isDealing }"
                 :style="fanStyle(ri * cardsPerRow + ci)"
                 :data-card-idx="ri * cardsPerRow + ci"
-                @click="toggleCard(card)"
               >
                 <div class="poker-card" :class="[cardColorClass(card), { 'is-joker': card.isJoker }]">
                   <div class="pc-corner pc-tl">
@@ -478,15 +477,10 @@ function onDragEnd() {
   if (!dragging.active) { dragging.mode = null; return; }
   dragging.active = false;
   if (dragging.touched.size <= 1) {
-    // Single tap — undo applyDrag, let @click toggleCard handle it
-    for (const cardId of dragging.touched) {
-      if (dragging.mode === 'select') selectedCards.delete(cardId);
-      else selectedCards.add(cardId);
-    }
     dragging.mode = null;
     return;
   }
-  setTimeout(() => { dragging.mode = null; }, 0);
+  dragging.mode = null;
 }
 
 function applyDrag(cardId) {
