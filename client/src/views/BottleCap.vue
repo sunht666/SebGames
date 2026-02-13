@@ -595,6 +595,14 @@ function handleServerMessage(msg) {
       showError(`${msg.playerName} 已断开连接`);
       break;
 
+    case 'player_away':
+      showError(`${msg.playerName} 暂时离线，等待重连...`);
+      break;
+
+    case 'player_back':
+      showError(`${msg.playerName} 已回来`);
+      break;
+
     case 'player_left': break;
 
     case 'player_index_update':

@@ -77,6 +77,7 @@ class BaseGame {
     // Active game: give grace period for mobile reconnect
     if (this.state !== 'WAITING' && this.state !== 'FINISHED') {
       if (!this._disconnectTimers) this._disconnectTimers = {};
+      this.broadcast({ type: 'player_away', playerIndex: idx, playerName: this.players[idx].name });
       this._disconnectTimers[playerId] = setTimeout(() => {
         delete this._disconnectTimers[playerId];
         this.removePlayer(playerId);
@@ -107,6 +108,7 @@ class BaseGame {
     player.id = newPlayerId;
 
     this.sendReconnectState(idx);
+    this.broadcast({ type: 'player_back', playerIndex: idx, playerName: player.name });
     return { success: true };
   }
 

@@ -886,6 +886,15 @@ function handleServerMessage(msg) {
       errorMsg.value = '对手已断开连接';
       break;
 
+    case 'player_away':
+      errorMsg.value = `${msg.playerName} 暂时离线，等待重连...`;
+      break;
+
+    case 'player_back':
+      errorMsg.value = `${msg.playerName} 已回来`;
+      setTimeout(() => { if (errorMsg.value === `${msg.playerName} 已回来`) errorMsg.value = ''; }, 2000);
+      break;
+
     case 'player_left':
       players[msg.playerIndex].name = '';
       players[msg.playerIndex].confirmed = false;

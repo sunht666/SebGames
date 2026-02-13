@@ -292,6 +292,18 @@
       <!-- Win notification -->
       <div v-if="winNotify" class="toast-success">{{ winNotify }}</div>
 
+      <!-- Bluff confirm modal -->
+      <div v-if="bluffConfirm" class="kick-overlay" @click="bluffConfirm = false">
+        <div class="kick-modal" @click.stop>
+          <p class="kick-modal-text">你选的牌和声明的 <strong>{{ declareRank }}</strong> 不一致</p>
+          <p class="kick-modal-warn">对手可能会质疑你，确定要虚张声势吗？</p>
+          <div class="kick-modal-actions">
+            <button class="btn btn-outline" @click="bluffConfirm = false">再想想</button>
+            <button class="btn btn-primary" @click="doPlayCards">确认出牌</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Kick confirm modal -->
       <div v-if="kickTarget >= 0" class="kick-overlay" @click="kickTarget = -1">
         <div class="kick-modal" @click.stop>
@@ -344,6 +356,7 @@ const roundNumber = ref(0);
 // UI state
 const selectedCards = reactive(new Set());
 const declareRank = ref('A');
+const bluffConfirm = ref(false);
 const passNotify = ref('');
 const winNotify = ref('');
 const handFanRef = ref(null);
@@ -516,6 +529,22 @@ function doKick() {
 
 function playCards() {
   if (selectedCards.size === 0) return;
+  // New round (no forced rank): warn if cards don't match declared rank
+  if (!forcedRank.value) {
+    const rank = declareRank.value;
+    const mismatch = myHand.value
+      .filter(c => selectedCards.has(c.id))
+      .some(c => !c.isJoker && c.rank !== rank);
+    if (mismatch) {
+      bluffConfirm.value = true;
+      return;
+    }
+  }
+  doPlayCards();
+}
+
+function doPlayCards() {
+  bluffConfirm.value = false;
   const cardIds = [...selectedCards];
   send({
     type: 'play_cards',
@@ -716,6 +745,14 @@ function handleServerMessage(msg) {
 
     case 'player_disconnected':
       showError(`${msg.playerName} 已断开连接`);
+      break;
+
+    case 'player_away':
+      showError(`${msg.playerName} 暂时离线，等待重连...`);
+      break;
+
+    case 'player_back':
+      showError(`${msg.playerName} 已回来`);
       break;
 
     case 'player_left': break;
