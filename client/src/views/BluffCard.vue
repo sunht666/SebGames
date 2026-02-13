@@ -611,6 +611,10 @@ function handleServerMessage(msg) {
 
     case 'player_left': break;
 
+    case 'player_index_update':
+      playerIndex.value = msg.playerIndex;
+      break;
+
     case 'game_over':
       gameState.value = 'FINISHED';
       rankings.value = msg.rankings || [];

@@ -558,6 +558,10 @@ function handleServerMessage(msg) {
 
     case 'player_left': break;
 
+    case 'player_index_update':
+      playerIndex.value = msg.playerIndex;
+      break;
+
     case 'room_dissolved':
       gameState.value = 'DISSOLVED';
       dissolveMessage.value = msg.message;

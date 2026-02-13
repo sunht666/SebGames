@@ -135,9 +135,15 @@ class NumberMine extends BaseGame {
       }
     } else {
       if (this.players[other]) {
-        this.sendTo(other, { type: 'player_left', playerIndex: idx });
+        // Promote remaining player to slot 0 (host) if needed
+        if (other !== 0) {
+          this.players[0] = this.players[other];
+          this.players[other] = null;
+          this.sendTo(0, { type: 'player_index_update', playerIndex: 0 });
+        }
+        this.sendTo(0, { type: 'player_left', playerIndex: idx });
         this.state = STATES.WAITING;
-        this.sendTo(other, { type: 'state_change', state: STATES.WAITING });
+        this.sendTo(0, { type: 'state_change', state: STATES.WAITING });
         this.broadcastPlayerList();
       }
     }

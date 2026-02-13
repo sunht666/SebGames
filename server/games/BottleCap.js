@@ -88,6 +88,10 @@ class BottleCap extends BaseGame {
       this.players[idx] = null;
       this.players = this.players.filter(p => p !== null);
       this.broadcast({ type: 'player_left', playerIndex: idx });
+      // Send updated indices to all remaining players (host promotion)
+      for (let i = 0; i < this.players.length; i++) {
+        this.sendTo(i, { type: 'player_index_update', playerIndex: i });
+      }
       this.broadcastPlayerList();
       return;
     }

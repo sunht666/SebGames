@@ -834,6 +834,10 @@ function handleServerMessage(msg) {
       players[msg.playerIndex].confirmed = false;
       break;
 
+    case 'player_index_update':
+      playerIndex.value = msg.playerIndex;
+      break;
+
     case 'room_left':
       break;
 
