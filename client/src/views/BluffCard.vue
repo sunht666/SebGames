@@ -264,7 +264,6 @@
       <div v-else-if="gameState === 'FINISHED'" class="state-panel fade-in text-center">
         <div class="result-icon">&#127942;</div>
         <h2 class="text-success">游戏结束</h2>
-        <p v-if="gameOverReason === 'disconnect'" class="text-muted">有玩家离开，游戏提前结束</p>
         <div class="rankings mt-3">
           <div v-for="r in rankings" :key="r.playerIndex" class="rank-item" :class="{ first: r.rank === 1, last: r.isLoser }">
             <span class="rank-num">#{{ r.rank }}</span>
@@ -323,7 +322,6 @@ const canPlayCards = ref(true);
 const forcedRank = ref(null);
 const winners = ref([]);
 const rankings = ref([]);
-const gameOverReason = ref('');
 const challengeResult = ref(null);
 const roundNumber = ref(0);
 
@@ -599,7 +597,6 @@ function handleServerMessage(msg) {
     case 'game_over':
       gameState.value = 'FINISHED';
       rankings.value = msg.rankings || [];
-      gameOverReason.value = msg.reason || '';
       break;
 
     case 'room_dissolved':

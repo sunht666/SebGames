@@ -151,8 +151,7 @@ class BluffCard extends BaseGame {
         this.playOrder.splice(poIdx, 1);
 
         if (this.playOrder.length <= 1) {
-          this.broadcast({ type: 'player_disconnected', playerIndex: idx, playerName });
-          this.endGame('disconnect');
+          this.endGame();
           return;
         }
 
@@ -379,36 +378,11 @@ class BluffCard extends BaseGame {
     // Broadcast updated player list (card counts)
     this.broadcastPlayerList();
 
-    // Check win condition
+    // Check win condition — first player to empty hand wins, game ends
     if (player.hand.length === 0) {
       this.winners.push(idx);
-      this.broadcast({
-        type: 'player_won',
-        playerIndex: idx,
-        playerName: player.name,
-        rank: this.winners.length,
-      });
-
-      // Remove from play order
-      const poIdx = this.playOrder.indexOf(idx);
-      if (poIdx !== -1) {
-        const wasCurrentTurn = poIdx === this.currentTurnIdx;
-        this.playOrder.splice(poIdx, 1);
-
-        if (this.playOrder.length <= 1) {
-          this.endGame();
-          return;
-        }
-
-        // Adjust current turn index
-        if (wasCurrentTurn) {
-          if (this.currentTurnIdx >= this.playOrder.length) {
-            this.currentTurnIdx = 0;
-          }
-        } else if (poIdx < this.currentTurnIdx) {
-          this.currentTurnIdx--;
-        }
-      }
+      this.endGame();
+      return;
     }
 
     // Advance turn
@@ -603,7 +577,7 @@ class BluffCard extends BaseGame {
 
   // ── Win/Loss ──
 
-  endGame(reason = 'normal') {
+  endGame() {
     if (this.challengeTimer) {
       clearTimeout(this.challengeTimer);
       this.challengeTimer = null;
@@ -633,7 +607,6 @@ class BluffCard extends BaseGame {
       type: 'game_over',
       rankings,
       winner: this.winners[0],
-      reason,
     });
 
     this.scheduleDissolve();
