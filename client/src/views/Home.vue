@@ -36,6 +36,15 @@
             <div class="game-card-name">唬牌</div>
             <div class="game-card-desc">2-6人吹牛牌</div>
           </div>
+          <div
+            class="game-card"
+            :class="{ selected: selectedGame === 'bottle-cap' }"
+            @click="selectedGame = 'bottle-cap'"
+          >
+            <div class="game-card-icon">&#127866;</div>
+            <div class="game-card-name">猜瓶盖</div>
+            <div class="game-card-desc">2-6人猜数游戏</div>
+          </div>
         </div>
       </div>
 
@@ -53,6 +62,10 @@
           <input type="checkbox" v-model="bcShuffleMode" class="checkbox" />
           <span>乱序模式 <small class="text-muted">(多抽1副牌随机丢弃,防算牌)</small></span>
         </label>
+      </div>
+      <div v-if="selectedGame === 'bottle-cap'" class="game-config mt-2">
+        <label>回合限时: {{ bcapTurnTime }}秒</label>
+        <input type="range" class="slider" v-model.number="bcapTurnTime" min="6" max="30" step="2" />
       </div>
 
       <div class="form-group mt-2">
@@ -140,7 +153,7 @@
 
       <!-- Rules -->
       <div class="rules mt-3">
-        <h3>{{ selectedGame === 'number-mine' ? '数字排雷规则' : '唬牌规则' }}</h3>
+        <h3>{{ selectedGame === 'number-mine' ? '数字排雷规则' : selectedGame === 'bluff-card' ? '唬牌规则' : '猜瓶盖规则' }}</h3>
         <ul v-if="selectedGame === 'number-mine'">
           <li>两位玩家各自设定一个 4 位数 (1000-9999)</li>
           <li>掷骰子决定先手，点数大者先猜</li>
@@ -149,7 +162,7 @@
           <li>只有数字和位数都对才算正确</li>
           <li>先猜中全部 4 位的玩家获胜</li>
         </ul>
-        <ul v-else>
+        <ul v-else-if="selectedGame === 'bluff-card'">
           <li>2-6 名玩家，使用 1-4 副扑克牌（含大小王）</li>
           <li>房主可在 2-6 人时随时开始游戏</li>
           <li>发牌后逆时针轮流出牌，每回合限时 15-30 秒</li>
@@ -159,6 +172,15 @@
           <li>质疑失败者或被揭穿者收走牌堆所有牌</li>
           <li>乱序模式：从多 1 副牌中随机抽取，防止算牌</li>
           <li>最先出完手牌者获胜，最后剩牌者失败</li>
+        </ul>
+        <ul v-else>
+          <li>2-6 名玩家，掷骰子决定第一个庄家</li>
+          <li>庄家在手中藏入 0 到 n-1 个瓶盖（n=玩家数）</li>
+          <li>其他玩家逆时针依次猜庄家手中的瓶盖数</li>
+          <li>每个数字只能被猜一次，不能重复</li>
+          <li>猜中者输，成为下一轮庄家</li>
+          <li>如果没人猜中，庄家输，继续当庄</li>
+          <li>超时未操作将自动随机选择</li>
         </ul>
       </div>
     </div>
@@ -188,6 +210,9 @@ const bcDeckCount = ref(1);
 const bcTurnTime = ref(20);
 const bcShuffleMode = ref(false);
 
+// Bottle cap config
+const bcapTurnTime = ref(12);
+
 // Room list
 const roomList = ref([]);
 const roomsLoading = ref(false);
@@ -196,11 +221,13 @@ let refreshTimer = null;
 const GAME_ROUTE_MAP = {
   'number-mine': { play: 'NumberMine', spectate: 'SpectateNumberMine' },
   'bluff-card': { play: 'BluffCard', spectate: 'SpectateBluffCard' },
+  'bottle-cap': { play: 'BottleCap', spectate: 'SpectateBottleCap' },
 };
 
 function gameLabel(type) {
   if (type === 'number-mine') return '数字排雷';
   if (type === 'bluff-card') return '唬牌';
+  if (type === 'bottle-cap') return '猜瓶盖';
   return type;
 }
 
@@ -210,7 +237,8 @@ const waitingRooms = computed(() =>
 
 const activeRooms = computed(() =>
   roomList.value.filter(
-    (r) => r.state === 'PLAYING' || r.state === 'ROLLING' || r.state === 'SETUP'
+    (r) => r.state === 'PLAYING' || r.state === 'ROLLING' || r.state === 'SETUP' ||
+           r.state === 'HIDING' || r.state === 'GUESSING' || r.state === 'ROUND_RESULT'
   )
 );
 
@@ -229,6 +257,9 @@ function getConfig() {
   }
   if (selectedGame.value === 'bluff-card') {
     return { deckCount: bcDeckCount.value, turnTime: bcTurnTime.value, shuffleMode: bcShuffleMode.value };
+  }
+  if (selectedGame.value === 'bottle-cap') {
+    return { turnTime: bcapTurnTime.value };
   }
   return {};
 }
@@ -401,7 +432,7 @@ onUnmounted(() => {
 
 .game-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
@@ -605,6 +636,11 @@ onUnmounted(() => {
 .badge-bluff-card {
   background: rgba(108, 92, 231, 0.2);
   color: var(--primary-light);
+}
+
+.badge-bottle-cap {
+  background: rgba(212, 165, 60, 0.2);
+  color: #d4a53c;
 }
 
 .room-players {

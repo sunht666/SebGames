@@ -1,9 +1,11 @@
 const NumberMine = require('./NumberMine');
 const BluffCard = require('./BluffCard');
+const BottleCap = require('./BottleCap');
 
 const GAME_TYPES = {
   'number-mine': NumberMine,
   'bluff-card': BluffCard,
+  'bottle-cap': BottleCap,
 };
 
 function createGame(roomId, gameType, config = {}) {

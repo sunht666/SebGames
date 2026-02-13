@@ -3,6 +3,7 @@ import Home from '../views/Home.vue';
 import NumberMine from '../views/NumberMine.vue';
 
 const BluffCard = () => import('../views/BluffCard.vue');
+const BottleCap = () => import('../views/BottleCap.vue');
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
@@ -22,6 +23,15 @@ const routes = [
     path: '/spectate/bluff-card/:roomId',
     name: 'SpectateBluffCard',
     component: BluffCard,
+    props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
+  },
+
+  // Bottle Cap
+  { path: '/game/bottle-cap/:roomId', name: 'BottleCap', component: BottleCap, props: true },
+  {
+    path: '/spectate/bottle-cap/:roomId',
+    name: 'SpectateBottleCap',
+    component: BottleCap,
     props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
   },
 
