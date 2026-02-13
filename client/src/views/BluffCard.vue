@@ -478,6 +478,11 @@ function onDragEnd() {
   if (!dragging.active) { dragging.mode = null; return; }
   dragging.active = false;
   if (dragging.touched.size <= 1) {
+    // Single tap — undo applyDrag, let @click toggleCard handle it
+    for (const cardId of dragging.touched) {
+      if (dragging.mode === 'select') selectedCards.delete(cardId);
+      else selectedCards.add(cardId);
+    }
     dragging.mode = null;
     return;
   }
