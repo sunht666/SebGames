@@ -363,6 +363,7 @@ const errorMsg = ref('');
 const spectatorCount = ref(0);
 const dissolveMessage = ref('');
 const kickTarget = ref(-1);
+const hasJoinedRoom = ref(false);
 
 // Setup
 const myNumber = ref(null);
@@ -626,6 +627,12 @@ function handleServerMessage(msg) {
       playerId.value = msg.playerId;
       if (props.spectateMode) {
         send({ type: 'spectate', roomId: parseInt(props.roomId, 10) });
+      } else if (hasJoinedRoom.value) {
+        send({
+          type: 'reconnect',
+          roomId: parseInt(props.roomId, 10),
+          playerName: sessionStorage.getItem('playerName') || '玩家',
+        });
       } else {
         send({
           type: 'join_room',
@@ -636,9 +643,59 @@ function handleServerMessage(msg) {
       break;
 
     case 'room_joined':
+      hasJoinedRoom.value = true;
       playerIndex.value = msg.playerIndex;
       players[msg.playerIndex].name = msg.playerName;
       gameState.value = 'WAITING';
+      break;
+
+    case 'reconnected':
+      hasJoinedRoom.value = true;
+      playerIndex.value = msg.playerIndex;
+      gameState.value = msg.state;
+      for (let i = 0; i < 2; i++) {
+        if (msg.players[i]) {
+          players[i].name = msg.players[i].name;
+          players[i].confirmed = msg.players[i].confirmed;
+        } else {
+          players[i].name = '';
+          players[i].confirmed = false;
+        }
+      }
+      currentTurn.value = msg.currentTurn;
+      roundNumber.value = msg.roundNumber;
+      winner.value = msg.winner;
+      history.splice(0, history.length, ...msg.history);
+      spectatorCount.value = msg.spectatorCount;
+      if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
+      if (msg.dice) {
+        diceValues[0] = msg.dice[0];
+        diceValues[1] = msg.dice[1];
+      }
+      if (msg.numbers) {
+        revealedNumbers.value = msg.numbers;
+      }
+      if (msg.myNumber != null) {
+        myNumber.value = msg.myNumber;
+        myNumberInput.value = String(msg.myNumber);
+      }
+      if (msg.myConfirmed) {
+        myConfirmed.value = true;
+      }
+      if (msg.state === 'PLAYING') {
+        if (msg.turnTimeRemaining != null) {
+          timeLeft.value = Math.ceil(msg.turnTimeRemaining / 1000);
+        }
+        startTimer();
+      }
+      if (msg.state === 'SETUP') startSetupCountdown();
+      break;
+
+    case 'reconnect_failed':
+      hasJoinedRoom.value = false;
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = '房间已解散';
+      setTimeout(() => { cleanup(); router.push('/'); }, 2000);
       break;
 
     case 'spectate_joined':

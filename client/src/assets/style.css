@@ -7,6 +7,10 @@
   padding: 0;
 }
 
+html, body {
+  overscroll-behavior-y: contain;
+}
+
 :root {
   --bg: #0b0b1a;
   --surface: #131330;

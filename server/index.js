@@ -9,6 +9,16 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
+// ── Heartbeat: detect dead connections (mobile background, etc.) ──
+const HEARTBEAT_INTERVAL = 25000;
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws._isAlive === false) return ws.terminate();
+    ws._isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL);
+
 // ── State ──
 const rooms = new Map();
 const kickBans = new Map(); // roomId → Map<ip, expiryTimestamp>
@@ -129,6 +139,9 @@ app.get('*', (_req, res) => {
 
 // ── WebSocket ──
 wss.on('connection', (ws, req) => {
+  ws._isAlive = true;
+  ws.on('pong', () => { ws._isAlive = true; });
+
   const playerId = crypto.randomUUID();
   const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
   ws._clientIp = clientIp;
@@ -164,11 +177,11 @@ wss.on('connection', (ws, req) => {
     if (currentRoom) {
       if (isSpectator) {
         currentRoom.removeSpectator(ws);
+        if (currentRoom.getPlayerCount() === 0 && currentRoom.getSpectatorCount() === 0) {
+          rooms.delete(currentRoom.roomId);
+        }
       } else {
-        currentRoom.removePlayer(playerId);
-      }
-      if (currentRoom.getPlayerCount() === 0 && currentRoom.getSpectatorCount() === 0) {
-        rooms.delete(currentRoom.roomId);
+        currentRoom.handleDisconnect(playerId);
       }
       currentRoom = null;
     }
@@ -237,6 +250,30 @@ wss.on('connection', (ws, req) => {
         currentRoom = specRoom;
         isSpectator = true;
         specRoom.addSpectator(ws);
+        break;
+      }
+
+      case 'reconnect': {
+        if (currentRoom) {
+          ws.send(JSON.stringify({ type: 'error', message: '你已在房间中' }));
+          return;
+        }
+        const rcRoomId = parseInt(msg.roomId, 10);
+        if (isNaN(rcRoomId) || rcRoomId < 1000 || rcRoomId > 9999) {
+          ws.send(JSON.stringify({ type: 'reconnect_failed' }));
+          return;
+        }
+        const rcRoom = rooms.get(rcRoomId);
+        if (!rcRoom) {
+          ws.send(JSON.stringify({ type: 'reconnect_failed' }));
+          return;
+        }
+        const rcResult = rcRoom.reconnectPlayer(ws, playerId, msg.playerName);
+        if (rcResult.success) {
+          currentRoom = rcRoom;
+        } else {
+          ws.send(JSON.stringify({ type: 'reconnect_failed' }));
+        }
         break;
       }
 

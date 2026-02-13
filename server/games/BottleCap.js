@@ -468,6 +468,10 @@ class BottleCap extends BaseGame {
       clearTimeout(this.roundResultTimer);
       this.roundResultTimer = null;
     }
+    if (this._disconnectTimers) {
+      for (const id in this._disconnectTimers) clearTimeout(this._disconnectTimers[id]);
+      this._disconnectTimers = {};
+    }
     this.state = STATES.FINISHED;
     this.broadcast({
       type: 'room_dissolved',
@@ -484,6 +488,32 @@ class BottleCap extends BaseGame {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
     }
+  }
+
+  // ── Reconnect ──
+
+  sendReconnectState(playerIndex) {
+    const isRevealed = this.state === STATES.ROUND_RESULT || this.state === STATES.FINISHED;
+    const msg = {
+      type: 'reconnected',
+      playerIndex,
+      roomId: this.roomId,
+      gameType: this.gameType,
+      state: this.state,
+      players: this.players.map(p => p ? { name: p.name, losses: p.losses } : null),
+      maxPlayers: this._maxPlayers,
+      turnTimeLimit: this.turnTimeLimit,
+      dealerIndex: this.dealerIndex,
+      dealerName: this.players[this.dealerIndex]?.name,
+      guessOrder: this.guessOrder,
+      currentGuesserIdx: this.currentGuesserIdx,
+      guessedNumbers: this.guessedNumbers,
+      maxCaps: (this.roundPlayerCount || this.getPlayerCount()) - 1,
+      revealedCount: isRevealed ? this.dealerCapCount : -1,
+      spectatorCount: this.spectators.length,
+      myCapCount: (playerIndex === this.dealerIndex && this.dealerCapCount >= 0) ? this.dealerCapCount : -1,
+    };
+    this.sendTo(playerIndex, msg);
   }
 
   // ── Spectator state ──

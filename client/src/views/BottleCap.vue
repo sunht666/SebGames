@@ -297,6 +297,7 @@ const spectatorCount = ref(0);
 const errorMsg = ref('');
 const dissolveMessage = ref('');
 const kickTarget = ref(-1);
+const hasJoinedRoom = ref(false);
 
 // Game state
 const dealerIndex = ref(-1);
@@ -429,6 +430,12 @@ function handleServerMessage(msg) {
       playerId.value = msg.playerId;
       if (props.spectateMode) {
         send({ type: 'spectate', roomId: parseInt(props.roomId, 10) });
+      } else if (hasJoinedRoom.value) {
+        send({
+          type: 'reconnect',
+          roomId: parseInt(props.roomId, 10),
+          playerName: sessionStorage.getItem('playerName') || '玩家',
+        });
       } else {
         send({
           type: 'join_room',
@@ -439,10 +446,42 @@ function handleServerMessage(msg) {
       break;
 
     case 'room_joined':
+      hasJoinedRoom.value = true;
       playerIndex.value = msg.playerIndex;
       gameState.value = 'WAITING';
       maxPlayersDisplay.value = msg.maxPlayers || 6;
       if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
+      break;
+
+    case 'reconnected':
+      hasJoinedRoom.value = true;
+      playerIndex.value = msg.playerIndex;
+      gameState.value = msg.state;
+      playerList.value = msg.players || [];
+      maxPlayersDisplay.value = msg.maxPlayers || 6;
+      if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
+      dealerIndex.value = msg.dealerIndex ?? -1;
+      dealerName.value = msg.dealerName || '';
+      maxCaps.value = msg.maxCaps || 1;
+      guessedNumbers.value = msg.guessedNumbers || [];
+      spectatorCount.value = msg.spectatorCount || 0;
+      if (msg.revealedCount >= 0) revealedCount.value = msg.revealedCount;
+      if (msg.currentGuesserIdx >= 0 && msg.guessOrder) {
+        currentGuesserIndex.value = msg.guessOrder[msg.currentGuesserIdx] ?? -1;
+        const guesser = playerList.value[currentGuesserIndex.value];
+        currentGuesserName.value = guesser?.name || '';
+      }
+      handFlipped.value = msg.state === 'GUESSING';
+      if (msg.myCapCount >= 0) {
+        selectedCapCount.value = msg.myCapCount;
+      }
+      break;
+
+    case 'reconnect_failed':
+      hasJoinedRoom.value = false;
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = '房间已解散';
+      setTimeout(() => { cleanup(); router.push('/'); }, 2000);
       break;
 
     case 'spectate_joined':

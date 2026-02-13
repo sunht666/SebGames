@@ -326,6 +326,7 @@ const spectatorCount = ref(0);
 const errorMsg = ref('');
 const dissolveMessage = ref('');
 const kickTarget = ref(-1);
+const hasJoinedRoom = ref(false);
 
 // Game state
 const myHand = ref([]);
@@ -563,6 +564,12 @@ function handleServerMessage(msg) {
       playerId.value = msg.playerId;
       if (props.spectateMode) {
         send({ type: 'spectate', roomId: parseInt(props.roomId, 10) });
+      } else if (hasJoinedRoom.value) {
+        send({
+          type: 'reconnect',
+          roomId: parseInt(props.roomId, 10),
+          playerName: sessionStorage.getItem('playerName') || '玩家',
+        });
       } else {
         send({
           type: 'join_room',
@@ -573,12 +580,46 @@ function handleServerMessage(msg) {
       break;
 
     case 'room_joined':
+      hasJoinedRoom.value = true;
       playerIndex.value = msg.playerIndex;
       gameState.value = 'WAITING';
       maxPlayersDisplay.value = msg.maxPlayers || 6;
       roomDeckCount.value = msg.deckCount || 1;
       roomShuffleMode.value = !!msg.shuffleMode;
       if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
+      break;
+
+    case 'reconnected':
+      hasJoinedRoom.value = true;
+      playerIndex.value = msg.playerIndex;
+      gameState.value = msg.state;
+      playerList.value = msg.players || [];
+      maxPlayersDisplay.value = msg.maxPlayers || 6;
+      roomDeckCount.value = msg.deckCount || 1;
+      roomShuffleMode.value = !!msg.shuffleMode;
+      if (msg.turnTimeLimit) turnTimeLimit.value = msg.turnTimeLimit;
+      currentTurn.value = msg.currentTurn;
+      canChallenge.value = !!msg.canChallenge;
+      canPass.value = !!msg.canPass;
+      pileCount.value = msg.pileCount || 0;
+      roundNumber.value = msg.roundNumber || 0;
+      winners.value = msg.winners || [];
+      spectatorCount.value = msg.spectatorCount || 0;
+      if (msg.lastPlay) {
+        lastPlayInfo.value = msg.lastPlay;
+        forcedRank.value = msg.lastPlay.declaredRank;
+        declareRank.value = msg.lastPlay.declaredRank;
+      } else {
+        forcedRank.value = null;
+      }
+      if (msg.hand) myHand.value = msg.hand;
+      break;
+
+    case 'reconnect_failed':
+      hasJoinedRoom.value = false;
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = '房间已解散';
+      setTimeout(() => { cleanup(); router.push('/'); }, 2000);
       break;
 
     case 'spectate_joined':

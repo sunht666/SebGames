@@ -68,6 +68,51 @@ class BaseGame {
     throw new Error('getSpectateState not implemented');
   }
 
+  // ── Disconnect with grace period for reconnect ──
+
+  handleDisconnect(playerId) {
+    const idx = this.getPlayerIndex(playerId);
+    if (idx === -1) return;
+
+    // Active game: give grace period for mobile reconnect
+    if (this.state !== 'WAITING' && this.state !== 'FINISHED') {
+      if (!this._disconnectTimers) this._disconnectTimers = {};
+      this._disconnectTimers[playerId] = setTimeout(() => {
+        delete this._disconnectTimers[playerId];
+        this.removePlayer(playerId);
+      }, 30000);
+      return;
+    }
+
+    this.removePlayer(playerId);
+  }
+
+  reconnectPlayer(ws, newPlayerId, playerName) {
+    const idx = this.players.findIndex(p => p && p.name === playerName);
+    if (idx === -1) return { success: false };
+
+    const player = this.players[idx];
+
+    // Cancel pending disconnect timer
+    if (this._disconnectTimers && this._disconnectTimers[player.id]) {
+      clearTimeout(this._disconnectTimers[player.id]);
+      delete this._disconnectTimers[player.id];
+    }
+
+    // Close old ws
+    try { player.ws.close(); } catch {}
+
+    // Swap identity
+    player.ws = ws;
+    player.id = newPlayerId;
+
+    this.sendReconnectState(idx);
+    return { success: true };
+  }
+
+  // Subclasses should override to send full game state
+  sendReconnectState(playerIndex) {}
+
   addSpectator(ws) {
     this.spectators.push(ws);
     const state = this.getSpectateState();
@@ -102,6 +147,11 @@ class BaseGame {
 
   scheduleDissolve(delay = 10000) {
     if (this.dissolveTimer) return;
+    // Clear any pending reconnect timers
+    if (this._disconnectTimers) {
+      for (const id in this._disconnectTimers) clearTimeout(this._disconnectTimers[id]);
+      this._disconnectTimers = {};
+    }
     this.dissolveTimer = setTimeout(() => {
       this.broadcast({
         type: 'room_dissolved',

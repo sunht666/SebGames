@@ -632,6 +632,47 @@ class BluffCard extends BaseGame {
     this.scheduleDissolve();
   }
 
+  // ── Reconnect ──
+
+  sendReconnectState(playerIndex) {
+    const player = this.players[playerIndex];
+    const currentPlayerIdx = this.playOrder.length > 0 ? this.playOrder[this.currentTurnIdx] : -1;
+    const canCh = this.lastPlay !== null && this.lastPlay.playerIndex !== currentPlayerIdx;
+    const canPa = this.lastPlay !== null;
+    const msg = {
+      type: 'reconnected',
+      playerIndex,
+      roomId: this.roomId,
+      gameType: this.gameType,
+      state: this.state,
+      players: this.players.map(p => p ? { name: p.name, cardCount: p.hand.length, ready: p.ready } : null),
+      maxPlayers: this._maxPlayers,
+      deckCount: this.deckCount,
+      shuffleMode: this.shuffleMode,
+      turnTimeLimit: this.turnTimeLimit,
+      currentTurn: currentPlayerIdx,
+      canChallenge: canCh,
+      canPass: canPa,
+      lastPlay: this.lastPlay ? {
+        playerIndex: this.lastPlay.playerIndex,
+        playerName: this.players[this.lastPlay.playerIndex]?.name,
+        declaredRank: this.lastPlay.declaredRank,
+        declaredCount: this.lastPlay.declaredCount,
+      } : null,
+      pileCount: this.pileCards.length,
+      roundNumber: this.roundNumber,
+      playOrder: this.playOrder,
+      hand: player.hand,
+      winners: this.winners.map((pi, rank) => ({
+        playerIndex: pi,
+        playerName: this.players[pi]?.name,
+        rank: rank + 1,
+      })),
+      spectatorCount: this.spectators.length,
+    };
+    this.sendTo(playerIndex, msg);
+  }
+
   // ── Spectators ──
 
   getSpectateState() {

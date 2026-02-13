@@ -410,6 +410,38 @@ class NumberMine extends BaseGame {
     }
   }
 
+  // ── Reconnect ──
+
+  sendReconnectState(playerIndex) {
+    const player = this.players[playerIndex];
+    const msg = {
+      type: 'reconnected',
+      playerIndex,
+      roomId: this.roomId,
+      gameType: this.gameType,
+      state: this.state,
+      players: this.players.map(p => p ? { name: p.name, confirmed: p.confirmed } : null),
+      currentTurn: this.currentTurn,
+      roundNumber: this.roundNumber,
+      history: this.history,
+      winner: this.winner,
+      spectatorCount: this.spectators.length,
+      turnTimeLimit: this.turnTimeLimit,
+      myNumber: player.number,
+      myConfirmed: player.confirmed,
+    };
+    if (this.players[0]?.dice != null) {
+      msg.dice = [this.players[0].dice, this.players[1].dice];
+    }
+    if (this.state === STATES.FINISHED && this.winner >= 0) {
+      msg.numbers = [this.players[0]?.number, this.players[1]?.number];
+    }
+    if (this.state === STATES.PLAYING && this.turnStartTime) {
+      msg.turnTimeRemaining = Math.max(0, this.turnTimeLimit - (Date.now() - this.turnStartTime));
+    }
+    this.sendTo(playerIndex, msg);
+  }
+
   // ── Spectators ──
 
   getSpectateState() {
