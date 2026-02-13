@@ -339,15 +339,19 @@ class NumberMine extends BaseGame {
     });
 
     if (correctCount === 4) {
+      this.clearTurnTimer();
       this.state = STATES.FINISHED;
       this.winner = idx;
-      this.broadcast({
-        type: 'game_over',
-        winner: idx,
-        reason: 'guessed',
-        numbers: [this.players[0].number, this.players[1].number],
-      });
-      this.scheduleDissolve();
+      // Delay so both players see the winning guess before game over
+      setTimeout(() => {
+        this.broadcast({
+          type: 'game_over',
+          winner: idx,
+          reason: 'guessed',
+          numbers: [this.players[0]?.number, this.players[1]?.number],
+        });
+        this.scheduleDissolve();
+      }, 2500);
       return;
     }
 

@@ -657,8 +657,9 @@ function handleServerMessage(msg) {
       break;
 
     case 'player_won':
-      winners.value.push({ playerIndex: msg.playerIndex, playerName: msg.playerName, rank: msg.rank });
-      winNotify.value = `${msg.playerName} 出完了！排名第${msg.rank}`;
+      winners.value.push({ playerIndex: msg.playerIndex, playerName: msg.playerName });
+      winNotify.value = `${msg.playerName} 出完了所有手牌，获胜！`;
+      currentTurn.value = -1;
       setTimeout(() => { winNotify.value = ''; }, 2500);
       break;
 

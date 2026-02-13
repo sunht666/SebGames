@@ -385,7 +385,16 @@ class BluffCard extends BaseGame {
     // Check win condition — first player to empty hand wins, game ends
     if (player.hand.length === 0) {
       this.winners.push(idx);
-      this.endGame();
+      // Stop all timers and block further actions immediately
+      if (this.turnTimer) { clearTimeout(this.turnTimer); this.turnTimer = null; }
+      this.state = STATES.FINISHED;
+      this.broadcast({
+        type: 'player_won',
+        playerIndex: idx,
+        playerName: player.name,
+      });
+      // Delay so everyone sees the last play before game over
+      setTimeout(() => this.endGame(), 2500);
       return;
     }
 
