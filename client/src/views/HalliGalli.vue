@@ -84,43 +84,9 @@
           </div>
         </div>
 
-        <!-- Table area: player face-up cards + bell -->
+        <!-- Table area: circular layout with bell in center -->
         <div class="table-area">
-          <div class="table-cards">
-            <div
-              v-for="(p, i) in playerList"
-              :key="'tc-' + i"
-              class="table-card-slot"
-              :class="{ active: currentTurn === i, 'just-flipped': lastFlipPlayer === i }"
-              v-if="p && playOrder.includes(i)"
-            >
-              <div class="tc-name">{{ p.name }}</div>
-              <div class="tc-counts">
-                <span class="tc-draw">{{ p.drawCount }}</span>
-              </div>
-              <!-- Face-up card or empty -->
-              <div v-if="p.topCard" class="fruit-card" :class="'fc-' + p.topCard.fruit">
-                <div class="fc-corner fc-tl">
-                  <span class="fc-count">{{ p.topCard.count }}</span>
-                  <span class="fc-fruit-sm">{{ fruitEmoji(p.topCard.fruit) }}</span>
-                </div>
-                <div class="fc-center">
-                  <div class="fc-fruits" :class="'fc-layout-' + p.topCard.count">
-                    <span v-for="n in p.topCard.count" :key="n" class="fc-fruit-icon">{{ fruitEmoji(p.topCard.fruit) }}</span>
-                  </div>
-                </div>
-                <div class="fc-corner fc-br">
-                  <span class="fc-count">{{ p.topCard.count }}</span>
-                  <span class="fc-fruit-sm">{{ fruitEmoji(p.topCard.fruit) }}</span>
-                </div>
-              </div>
-              <div v-else class="fruit-card-empty">
-                <span class="empty-text">空</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Bell -->
+          <!-- Bell in center -->
           <div class="bell-container">
             <button
               class="bell-btn"
@@ -139,6 +105,50 @@
               {{ bellResultText }}
             </div>
           </div>
+
+          <!-- Player card slots around the bell -->
+          <div class="table-ring" :class="'ring-' + activePlayerCount">
+            <div
+              v-for="(pi, slotIdx) in playOrder"
+              :key="'tc-' + pi"
+              class="table-card-slot"
+              :class="{
+                active: currentTurn === pi,
+                'just-flipped': lastFlipPlayer === pi,
+                me: pi === playerIndex && !spectateMode,
+              }"
+              :style="slotPosition(slotIdx, playOrder.length)"
+            >
+              <div class="tc-label">
+                <span class="tc-name" :class="{ 'tc-active': currentTurn === pi }">{{ playerList[pi]?.name }}</span>
+                <span class="tc-pile">{{ playerList[pi]?.drawCount || 0 }}张</span>
+              </div>
+              <!-- Face-up card -->
+              <div v-if="playerList[pi]?.topCard" class="fruit-card" :class="'fc-' + playerList[pi].topCard.fruit">
+                <div class="fc-corner fc-tl">
+                  <span class="fc-count">{{ playerList[pi].topCard.count }}</span>
+                  <span class="fc-fruit-sm">{{ fruitEmoji(playerList[pi].topCard.fruit) }}</span>
+                </div>
+                <div class="fc-center">
+                  <div class="fc-fruits" :class="'fc-layout-' + playerList[pi].topCard.count">
+                    <span v-for="n in playerList[pi].topCard.count" :key="n" class="fc-fruit-icon">{{ fruitEmoji(playerList[pi].topCard.fruit) }}</span>
+                  </div>
+                </div>
+                <div class="fc-corner fc-br">
+                  <span class="fc-count">{{ playerList[pi].topCard.count }}</span>
+                  <span class="fc-fruit-sm">{{ fruitEmoji(playerList[pi].topCard.fruit) }}</span>
+                </div>
+              </div>
+              <!-- Draw pile (card back) behind face-up card -->
+              <div v-if="playerList[pi]?.drawCount > 0" class="card-back-stack">
+                <div class="card-back"></div>
+              </div>
+              <!-- No face-up card yet -->
+              <div v-if="!playerList[pi]?.topCard" class="fruit-card-empty">
+                <span class="empty-text">未翻牌</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Flip button (for current player) -->
@@ -149,14 +159,6 @@
         </div>
         <div v-else-if="!spectateMode && !bellLocked && playOrder.includes(playerIndex)" class="flip-action text-center">
           <p class="text-muted">等待 {{ currentTurnName }} 翻牌...</p>
-        </div>
-
-        <!-- Fruit count helper (optional) -->
-        <div class="fruit-counter">
-          <div v-for="fruit in fruits" :key="fruit" class="fc-item" :class="{ 'fc-five': fruitCounts[fruit] === 5 }">
-            <span class="fci-emoji">{{ fruitEmoji(fruit) }}</span>
-            <span class="fci-count" :class="'fci-' + fruit">{{ fruitCounts[fruit] }}</span>
-          </div>
         </div>
       </div>
 
@@ -258,20 +260,23 @@ const turnTimeLimit = ref(5000);
 const turnTimeLeft = ref(0);
 let turnCountdown = null;
 
-const fruits = ['banana', 'strawberry', 'lime', 'plum'];
-
 // ── Computed ──
 const isMyTurn = computed(() => currentTurn.value === playerIndex.value);
 const timerPercent = computed(() => turnTimeLimit.value > 0 ? (turnTimeLeft.value / (turnTimeLimit.value / 1000)) * 100 : 0);
+const activePlayerCount = computed(() => playOrder.value.length);
 
-const fruitCounts = computed(() => {
-  const counts = { banana: 0, strawberry: 0, lime: 0, plum: 0 };
-  for (const p of playerList.value) {
-    if (!p || !p.topCard) continue;
-    counts[p.topCard.fruit] += p.topCard.count;
-  }
-  return counts;
-});
+// Position player card slots in a ring around the bell
+function slotPosition(slotIdx, total) {
+  // On mobile, use a simple flex layout (handled by CSS)
+  if (window.innerWidth <= 700) return {};
+  const radius = total <= 3 ? 140 : total <= 4 ? 160 : 170;
+  // Start from top, distribute evenly clockwise
+  const angle = (slotIdx / total) * 360 - 90;
+  const rad = (angle * Math.PI) / 180;
+  const x = Math.cos(rad) * radius;
+  const y = Math.sin(rad) * radius;
+  return { transform: `translate(${x}px, ${y}px)` };
+}
 
 function fruitEmoji(fruit) {
   const map = { banana: '\u{1F34C}', strawberry: '\u{1F353}', lime: '\u{1F34B}', plum: '\u{1F347}' };
@@ -727,26 +732,35 @@ onUnmounted(() => {
    TABLE AREA
    ═══════════════════════════════════════════════ */
 .table-area {
-  background: rgba(20,80,40,0.35);
-  border: 2px solid rgba(40,120,60,0.3);
-  border-radius: 16px; padding: 20px;
-  margin-bottom: 16px;
-  display: flex; flex-direction: column;
-  align-items: center; gap: 20px;
+  background: radial-gradient(ellipse at center, rgba(30,100,50,0.45) 0%, rgba(15,60,30,0.35) 100%);
+  border: 2px solid rgba(40,120,60,0.35);
+  border-radius: 50%;
+  padding: 40px;
+  margin: 0 auto 16px;
+  width: 460px; height: 460px;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 60px rgba(0,0,0,0.15), 0 4px 20px rgba(0,0,0,0.1);
 }
 
-.table-cards {
-  display: flex; gap: 14px; flex-wrap: wrap;
-  justify-content: center;
+/* Ring of player cards positioned around the bell */
+.table-ring {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .table-card-slot {
+  position: absolute;
   display: flex; flex-direction: column;
-  align-items: center; gap: 4px;
-  transition: transform 0.3s;
+  align-items: center; gap: 6px;
+  transition: all 0.3s;
 }
-.table-card-slot.active {
-  transform: translateY(-4px);
+.table-card-slot.active .tc-name {
+  color: var(--primary-light);
+}
+.table-card-slot.me .tc-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .table-card-slot.just-flipped .fruit-card {
   animation: cardFlipIn 0.5s ease-out;
@@ -757,53 +771,61 @@ onUnmounted(() => {
   100% { transform: perspective(600px) rotateY(0) scale(1); opacity: 1; }
 }
 
+.tc-label {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
 .tc-name {
-  font-size: 0.72rem; font-weight: 600;
-  color: var(--text-muted); white-space: nowrap;
-  max-width: 80px; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.78rem; font-weight: 700;
+  color: rgba(255,255,255,0.7); white-space: nowrap;
+  max-width: 90px; overflow: hidden; text-overflow: ellipsis;
+  transition: color 0.3s;
 }
-.tc-counts {
-  font-size: 0.65rem; color: var(--text-muted);
+.tc-name.tc-active {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255,215,0,0.4);
 }
-.tc-draw { opacity: 0.7; }
+.tc-pile {
+  font-size: 0.65rem; color: rgba(255,255,255,0.4);
+}
 
 /* ═══════════════════════════════════════════════
    FRUIT CARD (扑克牌风格水果卡)
    ═══════════════════════════════════════════════ */
 .fruit-card {
-  width: 72px; height: 100px;
-  border-radius: 8px;
+  width: 88px; height: 124px;
+  border-radius: 10px;
   position: relative;
   box-shadow:
-    0 2px 6px rgba(0,0,0,0.2),
-    inset 0 1px 0 rgba(255,255,255,0.8);
+    0 3px 10px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.9);
   user-select: none;
   overflow: hidden;
+  z-index: 2;
 }
 
 /* Fruit-specific backgrounds */
 .fc-banana {
-  background: linear-gradient(165deg, #fffef0 0%, #fff8d6 100%);
-  border: 1.5px solid #e8d68a;
+  background: linear-gradient(165deg, #fffef0 0%, #fff3b8 50%, #ffe88a 100%);
+  border: 2px solid #d4b84a;
 }
 .fc-strawberry {
-  background: linear-gradient(165deg, #fff5f5 0%, #ffe0e0 100%);
-  border: 1.5px solid #e8a0a0;
+  background: linear-gradient(165deg, #fff5f5 0%, #ffd0d0 50%, #ffb0b0 100%);
+  border: 2px solid #d87070;
 }
 .fc-lime {
-  background: linear-gradient(165deg, #f5fff5 0%, #e0f5e0 100%);
-  border: 1.5px solid #90c890;
+  background: linear-gradient(165deg, #f5fff5 0%, #d0f5d0 50%, #a8e8a8 100%);
+  border: 2px solid #6caa6c;
 }
 .fc-plum {
-  background: linear-gradient(165deg, #f8f0ff 0%, #ebe0f5 100%);
-  border: 1.5px solid #b8a0d8;
+  background: linear-gradient(165deg, #f8f0ff 0%, #e0ccf5 50%, #d0b8ee 100%);
+  border: 2px solid #9a78c0;
 }
 
 .fruit-card::before {
   content: '';
-  position: absolute; inset: 3px;
-  border: 1px solid rgba(0,0,0,0.04);
-  border-radius: 5px;
+  position: absolute; inset: 4px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 6px;
   pointer-events: none;
 }
 
@@ -813,13 +835,13 @@ onUnmounted(() => {
   display: flex; flex-direction: column;
   align-items: center; line-height: 1;
 }
-.fc-tl { top: 4px; left: 5px; }
-.fc-br { bottom: 4px; right: 5px; transform: rotate(180deg); }
+.fc-tl { top: 5px; left: 6px; }
+.fc-br { bottom: 5px; right: 6px; transform: rotate(180deg); }
 .fc-count {
-  font-size: 0.85rem; font-weight: 800;
+  font-size: 1rem; font-weight: 800;
   color: #333;
 }
-.fc-fruit-sm { font-size: 0.7rem; margin-top: -1px; }
+.fc-fruit-sm { font-size: 0.8rem; margin-top: -1px; }
 
 /* Center fruits */
 .fc-center {
@@ -831,36 +853,72 @@ onUnmounted(() => {
 .fc-fruits {
   display: flex; flex-wrap: wrap;
   justify-content: center; align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
-.fc-fruit-icon { font-size: 1.2rem; line-height: 1; }
+.fc-fruit-icon { font-size: 1.5rem; line-height: 1; }
 
 /* Layouts for different counts */
-.fc-layout-1 { width: 28px; }
-.fc-layout-1 .fc-fruit-icon { font-size: 1.6rem; }
-.fc-layout-2 { width: 28px; flex-direction: column; }
-.fc-layout-2 .fc-fruit-icon { font-size: 1.2rem; }
-.fc-layout-3 { width: 36px; }
-.fc-layout-3 .fc-fruit-icon { font-size: 1rem; }
-.fc-layout-4 { width: 36px; }
-.fc-layout-4 .fc-fruit-icon { font-size: 1rem; }
-.fc-layout-5 { width: 36px; }
-.fc-layout-5 .fc-fruit-icon { font-size: 0.9rem; }
+.fc-layout-1 { width: 36px; }
+.fc-layout-1 .fc-fruit-icon { font-size: 2.2rem; }
+.fc-layout-2 { width: 36px; flex-direction: column; gap: 4px; }
+.fc-layout-2 .fc-fruit-icon { font-size: 1.6rem; }
+.fc-layout-3 { width: 48px; }
+.fc-layout-3 .fc-fruit-icon { font-size: 1.3rem; }
+.fc-layout-4 { width: 48px; }
+.fc-layout-4 .fc-fruit-icon { font-size: 1.3rem; }
+.fc-layout-5 { width: 48px; }
+.fc-layout-5 .fc-fruit-icon { font-size: 1.1rem; }
 
 /* Fruit-specific count colors */
-.fc-banana .fc-count { color: #b8860b; }
+.fc-banana .fc-count { color: #a07800; }
 .fc-strawberry .fc-count { color: #cc2222; }
-.fc-lime .fc-count { color: #228b22; }
+.fc-lime .fc-count { color: #1a7a1a; }
 .fc-plum .fc-count { color: #6a0dad; }
+
+/* Card back (draw pile) */
+.card-back-stack {
+  position: absolute;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+.card-back {
+  width: 88px; height: 124px;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #2a5298 0px, #2a5298 4px,
+      #1e3a6e 4px, #1e3a6e 8px
+    );
+  border: 2px solid #1a2e5a;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  position: relative;
+}
+.card-back::before {
+  content: '';
+  position: absolute; inset: 5px;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+}
+.card-back::after {
+  content: '🃏';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  opacity: 0.4;
+}
 
 /* Empty card slot */
 .fruit-card-empty {
-  width: 72px; height: 100px;
-  border: 2px dashed rgba(255,255,255,0.15);
-  border-radius: 8px;
+  width: 88px; height: 124px;
+  border: 2px dashed rgba(255,255,255,0.18);
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
+  z-index: 2;
 }
-.empty-text { color: rgba(255,255,255,0.2); font-size: 0.85rem; }
+.empty-text { color: rgba(255,255,255,0.3); font-size: 0.8rem; }
 
 /* ═══════════════════════════════════════════════
    BELL
@@ -991,38 +1049,6 @@ onUnmounted(() => {
 }
 
 /* ═══════════════════════════════════════════════
-   FRUIT COUNTER
-   ═══════════════════════════════════════════════ */
-.fruit-counter {
-  display: flex; justify-content: center;
-  gap: 16px; padding: 10px;
-  background: var(--surface);
-  border-radius: var(--radius-sm);
-}
-.fc-item {
-  display: flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 6px;
-  transition: all 0.3s;
-}
-.fc-item.fc-five {
-  background: rgba(0,184,148,0.2);
-  box-shadow: 0 0 0 2px var(--success);
-  animation: fiveGlow 0.8s ease-in-out infinite alternate;
-}
-@keyframes fiveGlow {
-  from { box-shadow: 0 0 0 2px var(--success); }
-  to { box-shadow: 0 0 8px 2px var(--success); }
-}
-.fci-emoji { font-size: 1.2rem; }
-.fci-count {
-  font-size: 1rem; font-weight: 800;
-}
-.fci-banana { color: #daa520; }
-.fci-strawberry { color: #cc2222; }
-.fci-lime { color: #228b22; }
-.fci-plum { color: #6a0dad; }
-
-/* ═══════════════════════════════════════════════
    BELL RESULT OVERLAY
    ═══════════════════════════════════════════════ */
 .bell-overlay {
@@ -1105,23 +1131,43 @@ onUnmounted(() => {
   .game-header { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
   .game-main { padding: 10px; }
 
-  .fruit-card { width: 56px; height: 80px; }
-  .fruit-card-empty { width: 56px; height: 80px; }
-  .fc-count { font-size: 0.72rem; }
-  .fc-fruit-sm { font-size: 0.58rem; }
-  .fc-fruit-icon { font-size: 0.9rem; }
-  .fc-layout-1 .fc-fruit-icon { font-size: 1.2rem; }
-  .fc-tl { top: 3px; left: 3px; }
-  .fc-br { bottom: 3px; right: 3px; }
+  .table-area {
+    width: 100%; height: auto;
+    border-radius: 16px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .table-ring {
+    position: relative;
+    display: flex; flex-wrap: wrap;
+    justify-content: center; gap: 12px;
+    margin-top: 16px;
+  }
+  .table-card-slot {
+    position: relative !important;
+    transform: none !important;
+  }
 
-  .bell-btn { width: 90px; height: 90px; }
-  .bell-body { width: 40px; height: 40px; }
-  .bell-dome { width: 38px; height: 30px; }
-  .bell-rim { width: 42px; height: 6px; }
-  .bell-base { width: 65px; height: 5px; }
+  .fruit-card { width: 64px; height: 90px; }
+  .fruit-card-empty { width: 64px; height: 90px; }
+  .fc-count { font-size: 0.78rem; }
+  .fc-fruit-sm { font-size: 0.62rem; }
+  .fc-fruit-icon { font-size: 1.1rem; }
+  .fc-layout-1 .fc-fruit-icon { font-size: 1.5rem; }
+  .fc-layout-2 .fc-fruit-icon { font-size: 1.1rem; }
+  .fc-layout-3 .fc-fruit-icon { font-size: 0.95rem; }
+  .fc-layout-4 .fc-fruit-icon { font-size: 0.95rem; }
+  .fc-layout-5 .fc-fruit-icon { font-size: 0.85rem; }
+  .fc-tl { top: 3px; left: 4px; }
+  .fc-br { bottom: 3px; right: 4px; }
 
-  .table-area { padding: 14px; gap: 14px; }
-  .table-cards { gap: 8px; }
+  .card-back-stack { display: none; }
+
+  .bell-btn { width: 80px; height: 80px; }
+  .bell-body { width: 36px; height: 36px; }
+  .bell-dome { width: 34px; height: 28px; }
+  .bell-rim { width: 38px; height: 6px; }
+  .bell-base { width: 58px; height: 5px; }
+  .bell-container { margin-bottom: 8px; }
 
   .player-strip { gap: 6px; }
   .ps-item { min-width: 64px; padding: 8px 10px; }
@@ -1129,8 +1175,7 @@ onUnmounted(() => {
   .state-panel { margin: 30px auto; }
   .spec-tag { display: none; }
 
-  .fruit-counter { gap: 8px; padding: 8px; }
-  .fci-emoji { font-size: 1rem; }
-  .fci-count { font-size: 0.85rem; }
+  .tc-name { font-size: 0.7rem; }
+  .tc-pile { font-size: 0.6rem; }
 }
 </style>
