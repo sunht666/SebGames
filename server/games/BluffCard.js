@@ -151,7 +151,8 @@ class BluffCard extends BaseGame {
         this.playOrder.splice(poIdx, 1);
 
         if (this.playOrder.length <= 1) {
-          this.endGame();
+          this.broadcast({ type: 'player_disconnected', playerIndex: idx, playerName });
+          this.endGame('disconnect');
           return;
         }
 
@@ -460,6 +461,7 @@ class BluffCard extends BaseGame {
       challengedIndex: this.lastPlay.playerIndex,
       challengedName: this.players[this.lastPlay.playerIndex]?.name,
       revealedCards: lastCards,
+      allPileCards: [...this.pileCards],
       declaredRank,
       isBluff,
       loserIndex: loserIdx,
@@ -490,12 +492,12 @@ class BluffCard extends BaseGame {
       this.currentTurnIdx = winnerPoIdx;
     }
 
-    // Delay before next turn
+    // Delay before next turn (4s to view all pile cards)
     this.challengeTimer = setTimeout(() => {
       this.challengeTimer = null;
       this.broadcast({ type: 'new_round', roundNumber: this.roundNumber });
       this.broadcastTurn();
-    }, 3000);
+    }, 4000);
   }
 
   handlePass(playerId) {
@@ -601,7 +603,7 @@ class BluffCard extends BaseGame {
 
   // ── Win/Loss ──
 
-  endGame() {
+  endGame(reason = 'normal') {
     if (this.challengeTimer) {
       clearTimeout(this.challengeTimer);
       this.challengeTimer = null;
@@ -631,6 +633,7 @@ class BluffCard extends BaseGame {
       type: 'game_over',
       rankings,
       winner: this.winners[0],
+      reason,
     });
 
     this.scheduleDissolve();

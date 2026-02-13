@@ -230,6 +230,32 @@
             <p class="cr-result" :class="challengeResult.isBluff ? 'text-success' : 'text-danger'">
               {{ challengeResult.loserName }} 收走全部牌堆
             </p>
+            <!-- All pile cards -->
+            <div v-if="challengeResult.allPileCards && challengeResult.allPileCards.length > challengeResult.revealedCards.length" class="cr-pile-section">
+              <p class="cr-pile-label">牌堆所有牌 ({{ challengeResult.allPileCards.length }}张)</p>
+              <div class="cr-pile-cards">
+                <div
+                  v-for="(card, ci) in challengeResult.allPileCards"
+                  :key="'pile-' + card.id"
+                  class="poker-card cr-pile-poker"
+                  :class="[cardColorClass(card), { 'is-joker': card.isJoker }]"
+                  :style="{ animationDelay: (ci * 0.06 + 0.3) + 's' }"
+                >
+                  <div class="pc-corner pc-tl">
+                    <span class="pc-rank">{{ shortRank(card) }}</span>
+                    <span class="pc-suit">{{ suitSymbol(card) }}</span>
+                  </div>
+                  <div class="pc-center">
+                    <template v-if="card.isJoker">
+                      <span class="joker-star">&#9733;</span>
+                    </template>
+                    <template v-else>
+                      <span class="center-suit">{{ suitSymbol(card) }}</span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -238,6 +264,7 @@
       <div v-else-if="gameState === 'FINISHED'" class="state-panel fade-in text-center">
         <div class="result-icon">&#127942;</div>
         <h2 class="text-success">游戏结束</h2>
+        <p v-if="gameOverReason === 'disconnect'" class="text-muted">有玩家离开，游戏提前结束</p>
         <div class="rankings mt-3">
           <div v-for="r in rankings" :key="r.playerIndex" class="rank-item" :class="{ first: r.rank === 1, last: r.isLoser }">
             <span class="rank-num">#{{ r.rank }}</span>
@@ -296,6 +323,7 @@ const canPlayCards = ref(true);
 const forcedRank = ref(null);
 const winners = ref([]);
 const rankings = ref([]);
+const gameOverReason = ref('');
 const challengeResult = ref(null);
 const roundNumber = ref(0);
 
@@ -537,7 +565,7 @@ function handleServerMessage(msg) {
 
     case 'challenge_result':
       challengeResult.value = msg;
-      setTimeout(() => { challengeResult.value = null; }, 3500);
+      setTimeout(() => { challengeResult.value = null; }, 4500);
       break;
 
     case 'player_passed':
@@ -571,6 +599,7 @@ function handleServerMessage(msg) {
     case 'game_over':
       gameState.value = 'FINISHED';
       rankings.value = msg.rankings || [];
+      gameOverReason.value = msg.reason || '';
       break;
 
     case 'room_dissolved':
@@ -1042,6 +1071,29 @@ onUnmounted(() => {
   100% { transform: perspective(600px) rotateY(0) scale(1); opacity: 1; }
 }
 .cr-result { font-weight: 700; font-size: 1.05rem; margin-top: 4px; }
+
+/* Pile cards section */
+.cr-pile-section {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.cr-pile-label {
+  font-size: 0.8rem; color: var(--text-muted);
+  margin-bottom: 8px; font-weight: 600;
+}
+.cr-pile-cards {
+  display: flex; justify-content: center;
+  gap: 4px; flex-wrap: wrap; max-height: 140px; overflow-y: auto;
+}
+.cr-pile-poker {
+  width: 40px; height: 56px; font-size: 0.7rem;
+  animation: flipReveal 0.4s ease-out both;
+}
+.cr-pile-poker .pc-rank { font-size: 0.6rem; }
+.cr-pile-poker .pc-suit { font-size: 0.5rem; }
+.cr-pile-poker .center-suit { font-size: 1rem; }
+.cr-pile-poker .joker-star { font-size: 0.9rem; }
+.cr-pile-poker .pc-br { display: none; }
 
 /* ═══════════════════════════════════════════════
    RANKINGS / GAME OVER
