@@ -307,6 +307,18 @@
       <div v-if="errorMsg" class="toast-error" @click="errorMsg = ''">
         {{ errorMsg }}
       </div>
+
+      <!-- Kick confirm modal -->
+      <div v-if="kickTarget >= 0" class="kick-overlay" @click="kickTarget = -1">
+        <div class="kick-modal" @click.stop>
+          <p class="kick-modal-text">确定要踢出 <strong>{{ players[kickTarget]?.name || '玩家' }}</strong> 吗？</p>
+          <p class="kick-modal-warn">踢出后对方30秒内无法再次加入</p>
+          <div class="kick-modal-actions">
+            <button class="btn btn-outline" @click="kickTarget = -1">取消</button>
+            <button class="btn btn-danger" @click="doKick">确认踢出</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <!-- Floating card result overlay -->
@@ -350,6 +362,7 @@ const revealedNumbers = ref(null);
 const errorMsg = ref('');
 const spectatorCount = ref(0);
 const dissolveMessage = ref('');
+const kickTarget = ref(-1);
 
 // Setup
 const myNumber = ref(null);
@@ -491,9 +504,13 @@ function send(msg) {
 function startGame() { send({ type: 'start_game' }); }
 
 function confirmKick(targetIndex) {
-  const name = players[targetIndex]?.name || '玩家';
-  if (confirm(`确定要踢出 ${name} 吗？\n踢出后对方30秒内无法再次加入。`)) {
-    send({ type: 'kick_player', targetIndex });
+  kickTarget.value = targetIndex;
+}
+
+function doKick() {
+  if (kickTarget.value >= 0) {
+    send({ type: 'kick_player', targetIndex: kickTarget.value });
+    kickTarget.value = -1;
   }
 }
 
@@ -1016,6 +1033,36 @@ onUnmounted(() => {
   opacity: 0.6; transition: opacity 0.15s;
 }
 .kick-btn:hover { opacity: 1; }
+
+.kick-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
+  animation: kickFadeIn 0.2s ease-out;
+}
+@keyframes kickFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.kick-modal {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px 28px; text-align: center;
+  max-width: 320px; width: 85%;
+  animation: kickPopIn 0.25s cubic-bezier(0.17,0.67,0.29,1.2) both;
+}
+@keyframes kickPopIn {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.kick-modal-text { font-size: 1rem; margin-bottom: 6px; }
+.kick-modal-warn { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 18px; }
+.kick-modal-actions { display: flex; gap: 12px; justify-content: center; }
+.kick-modal-actions .btn { padding: 8px 20px; border-radius: 8px; font-size: 0.9rem; cursor: pointer; }
+.btn-outline {
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+}
+.btn-outline:hover { background: var(--surface); }
+.btn-danger {
+  background: var(--danger); color: #fff; border: none;
+}
+.btn-danger:hover { filter: brightness(1.1); }
 
 .waiting-icon {
   font-size: 3rem;
