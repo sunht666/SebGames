@@ -81,13 +81,19 @@ class NumberMine extends BaseGame {
         playerIndex: other,
         playerName: this.players[other].name,
       });
-
-      this.state = STATES.SETUP;
-      this.broadcast({ type: 'state_change', state: STATES.SETUP });
-      this.startSetupTimer();
     }
 
+    this.broadcastPlayerList();
     return { success: true };
+  }
+
+  broadcastPlayerList() {
+    this.broadcast({
+      type: 'player_list',
+      players: this.players.map(p =>
+        p ? { name: p.name, confirmed: !!p.confirmed } : null
+      ),
+    });
   }
 
   removePlayer(playerId) {
@@ -132,6 +138,7 @@ class NumberMine extends BaseGame {
         this.sendTo(other, { type: 'player_left', playerIndex: idx });
         this.state = STATES.WAITING;
         this.sendTo(other, { type: 'state_change', state: STATES.WAITING });
+        this.broadcastPlayerList();
       }
     }
   }
@@ -140,6 +147,9 @@ class NumberMine extends BaseGame {
 
   handleMessage(playerId, msg) {
     switch (msg.type) {
+      case 'start_game':
+        this.handleStartGame(playerId);
+        break;
       case 'set_number':
         this.setNumber(playerId, msg.number, !!msg.random);
         break;
@@ -150,6 +160,15 @@ class NumberMine extends BaseGame {
         this.submitGuess(playerId, msg.number);
         break;
     }
+  }
+
+  handleStartGame(playerId) {
+    if (this.state !== STATES.WAITING) return;
+    if (!this.players[0] || this.players[0].id !== playerId) return;
+    if (this.getPlayerCount() < 2) return;
+    this.state = STATES.SETUP;
+    this.broadcast({ type: 'state_change', state: STATES.SETUP });
+    this.startSetupTimer();
   }
 
   // ── Number setup ──

@@ -37,9 +37,31 @@
       <!-- Waiting for opponent -->
       <div v-else-if="gameState === 'WAITING'" class="state-panel fade-in text-center">
         <div class="waiting-icon">&#9203;</div>
-        <h2>等待对手加入</h2>
+        <h2>等待玩家加入</h2>
         <p class="text-muted mt-1">房间号: <strong class="text-primary">{{ roomId }}</strong></p>
-        <p class="text-muted">将房间号分享给朋友即可开始</p>
+        <p class="text-muted">{{ playerCount }} / 2 玩家</p>
+
+        <div class="player-slots mt-3">
+          <div v-for="i in 2" :key="i - 1" class="player-slot" :class="{ filled: players[i - 1]?.name }">
+            <span v-if="players[i - 1]?.name" class="slot-name">{{ players[i - 1].name }}</span>
+            <span v-else class="slot-empty">空位</span>
+            <span v-if="i === 1 && players[0]?.name" class="host-badge">房主</span>
+            <button
+              v-if="!spectateMode && playerIndex === 0 && i > 1 && players[i - 1]?.name"
+              class="kick-btn"
+              @click="confirmKick(i - 1)"
+            >&#10005;</button>
+          </div>
+        </div>
+
+        <button
+          v-if="!spectateMode && playerIndex === 0 && playerCount >= 2"
+          class="btn btn-primary btn-lg mt-3"
+          @click="startGame"
+        >
+          开始游戏
+        </button>
+        <p v-else-if="!spectateMode && playerIndex === 0" class="text-muted mt-2">至少需要2名玩家</p>
       </div>
 
       <!-- Number setup -->
@@ -348,6 +370,9 @@ const digits = reactive(['', '', '', '']);
 const digitRefs = ref([]);
 const guessSubmitted = ref(false);
 
+// Player count for waiting state
+const playerCount = computed(() => players.filter(p => p.name).length);
+
 // Guess result card overlay
 const lastResult = ref(null);
 const lastResultLeaving = ref(false);
@@ -460,6 +485,15 @@ function onNumberInput() {
 function send(msg) {
   if (ws.value && ws.value.readyState === 1) {
     ws.value.send(JSON.stringify(msg));
+  }
+}
+
+function startGame() { send({ type: 'start_game' }); }
+
+function confirmKick(targetIndex) {
+  const name = players[targetIndex]?.name || '玩家';
+  if (confirm(`确定要踢出 ${name} 吗？\n踢出后对方30秒内无法再次加入。`)) {
+    send({ type: 'kick_player', targetIndex });
   }
 }
 
@@ -625,6 +659,24 @@ function handleServerMessage(msg) {
 
     case 'player_joined':
       players[msg.playerIndex].name = msg.playerName;
+      break;
+
+    case 'player_list':
+      for (let i = 0; i < 2; i++) {
+        if (msg.players && msg.players[i]) {
+          players[i].name = msg.players[i].name;
+          players[i].confirmed = !!msg.players[i].confirmed;
+        } else {
+          players[i].name = '';
+          players[i].confirmed = false;
+        }
+      }
+      break;
+
+    case 'kicked':
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = msg.message;
+      setTimeout(() => { cleanup(); router.push('/'); }, 3000);
       break;
 
     case 'state_change':
@@ -936,6 +988,34 @@ onUnmounted(() => {
   max-width: 500px;
   margin: 60px auto;
 }
+
+.player-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px; max-width: 400px; margin: 0 auto;
+}
+.player-slot {
+  padding: 12px; background: var(--surface);
+  border: 2px solid var(--border); border-radius: var(--radius-sm);
+  text-align: center; position: relative;
+}
+.player-slot.filled {
+  border-color: var(--primary); background: rgba(108,92,231,0.08);
+}
+.slot-name { font-weight: 700; font-size: 0.9rem; }
+.slot-empty { color: var(--text-muted); font-size: 0.85rem; }
+.host-badge {
+  position: absolute; top: -8px; right: -8px;
+  font-size: 0.6rem; background: var(--warning); color: #000;
+  padding: 1px 5px; border-radius: 3px; font-weight: 700;
+}
+.kick-btn {
+  position: absolute; top: 2px; left: 2px;
+  background: none; border: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 2px 5px;
+  opacity: 0.6; transition: opacity 0.15s;
+}
+.kick-btn:hover { opacity: 1; }
 
 .waiting-icon {
   font-size: 3rem;

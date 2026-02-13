@@ -11,6 +11,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 // ── State ──
 const rooms = new Map();
+const kickBans = new Map(); // roomId → Map<ip, expiryTimestamp>
 
 // ── Rate limiting (HTTP) ──
 const httpLimits = new Map();
@@ -45,6 +46,13 @@ setInterval(() => {
     if (room.getPlayerCount() === 0 && room.getSpectatorCount() === 0 && now - room.createdAt > 60000) {
       rooms.delete(id);
     }
+  }
+  // Clean up expired kick bans
+  for (const [roomId, bans] of kickBans) {
+    for (const [ip, expiry] of bans) {
+      if (now >= expiry) bans.delete(ip);
+    }
+    if (bans.size === 0) kickBans.delete(roomId);
   }
 }, 60000);
 
@@ -122,6 +130,8 @@ app.get('*', (_req, res) => {
 // ── WebSocket ──
 wss.on('connection', (ws, req) => {
   const playerId = crypto.randomUUID();
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+  ws._clientIp = clientIp;
   let currentRoom = null;
   let isSpectator = false;
 
@@ -189,6 +199,17 @@ wss.on('connection', (ws, req) => {
           rooms.set(roomId, room);
         }
 
+        // Check kick ban
+        const roomBans = kickBans.get(roomId);
+        if (roomBans) {
+          const banExpiry = roomBans.get(clientIp);
+          if (banExpiry && Date.now() < banExpiry) {
+            const remaining = Math.ceil((banExpiry - Date.now()) / 1000);
+            ws.send(JSON.stringify({ type: 'error', message: `你已被踢出，${remaining}秒后可重新加入` }));
+            return;
+          }
+        }
+
         const result = room.addPlayer(ws, playerId, msg.playerName || '玩家');
         if (result.success) {
           currentRoom = room;
@@ -235,6 +256,54 @@ wss.on('connection', (ws, req) => {
         currentRoom = null;
         isSpectator = false;
         ws.send(JSON.stringify({ type: 'room_left' }));
+        break;
+      }
+
+      case 'kick_player': {
+        if (!currentRoom || isSpectator) return;
+        if (currentRoom.state !== 'WAITING') {
+          ws.send(JSON.stringify({ type: 'error', message: '游戏进行中不能踢人' }));
+          return;
+        }
+        // Only host (player[0]) can kick
+        if (!currentRoom.players[0] || currentRoom.players[0].id !== playerId) {
+          ws.send(JSON.stringify({ type: 'error', message: '只有房主可以踢人' }));
+          return;
+        }
+        const targetIndex = parseInt(msg.targetIndex, 10);
+        if (isNaN(targetIndex) || targetIndex <= 0) {
+          ws.send(JSON.stringify({ type: 'error', message: '无效的目标' }));
+          return;
+        }
+        const target = currentRoom.players[targetIndex];
+        if (!target) {
+          ws.send(JSON.stringify({ type: 'error', message: '该玩家不存在' }));
+          return;
+        }
+        const targetIp = target.ws._clientIp;
+        const targetPlayerId = target.id;
+        const targetName = target.name;
+
+        // Send kicked notification to target
+        if (target.ws.readyState === 1) {
+          target.ws.send(JSON.stringify({ type: 'kicked', message: '你已被房主踢出房间，30秒内无法再次加入' }));
+        }
+
+        // Add kick ban (30 seconds)
+        const roomId = currentRoom.roomId;
+        if (!kickBans.has(roomId)) kickBans.set(roomId, new Map());
+        if (targetIp) kickBans.get(roomId).set(targetIp, Date.now() + 30000);
+
+        // Remove player from game
+        currentRoom.removePlayer(targetPlayerId);
+
+        // Broadcast notification
+        currentRoom.broadcast({
+          type: 'player_kicked',
+          playerIndex: targetIndex,
+          playerName: targetName,
+        });
+
         break;
       }
 

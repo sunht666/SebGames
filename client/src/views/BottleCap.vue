@@ -35,6 +35,11 @@
             <span v-if="playerList[i]" class="slot-name">{{ playerList[i].name }}</span>
             <span v-else class="slot-empty">空位</span>
             <span v-if="i === 0 && playerList[i]" class="host-badge">房主</span>
+            <button
+              v-if="!spectateMode && playerIndex === 0 && i > 0 && playerList[i]"
+              class="kick-btn"
+              @click="confirmKick(i)"
+            >&#10005;</button>
           </div>
         </div>
 
@@ -356,6 +361,13 @@ function send(msg) {
 
 function startGame() { send({ type: 'start_game' }); }
 
+function confirmKick(targetIndex) {
+  const name = playerList.value[targetIndex]?.name || '玩家';
+  if (confirm(`确定要踢出 ${name} 吗？\n踢出后对方30秒内无法再次加入。`)) {
+    send({ type: 'kick_player', targetIndex });
+  }
+}
+
 function hideCaps() {
   send({ type: 'hide_caps', count: selectedCapCount.value });
 }
@@ -537,6 +549,15 @@ function handleServerMessage(msg) {
       }
       break;
 
+    case 'kicked':
+      gameState.value = 'DISSOLVED';
+      dissolveMessage.value = msg.message;
+      setTimeout(() => { cleanup(); router.push('/'); }, 3000);
+      break;
+
+    case 'player_kicked':
+      break;
+
     case 'spectator_count':
       spectatorCount.value = msg.count;
       break;
@@ -655,6 +676,13 @@ onUnmounted(() => {
   font-size: 0.6rem; background: var(--warning); color: #000;
   padding: 1px 5px; border-radius: 3px; font-weight: 700;
 }
+.kick-btn {
+  position: absolute; top: 2px; left: 2px;
+  background: none; border: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 2px 5px;
+  opacity: 0.6; transition: opacity 0.15s;
+}
+.kick-btn:hover { opacity: 1; }
 
 /* ═══════════════════════════════════════════════
    DICE
