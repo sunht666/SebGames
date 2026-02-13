@@ -580,6 +580,7 @@ function handleServerMessage(msg) {
 
     case 'challenge_result':
       challengeResult.value = msg;
+      currentTurn.value = -1;
       setTimeout(() => { challengeResult.value = null; }, 4500);
       break;
 
