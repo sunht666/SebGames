@@ -4,6 +4,7 @@ import NumberMine from '../views/NumberMine.vue';
 
 const BluffCard = () => import('../views/BluffCard.vue');
 const BottleCap = () => import('../views/BottleCap.vue');
+const HalliGalli = () => import('../views/HalliGalli.vue');
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
@@ -32,6 +33,15 @@ const routes = [
     path: '/spectate/bottle-cap/:roomId',
     name: 'SpectateBottleCap',
     component: BottleCap,
+    props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
+  },
+
+  // Halli Galli
+  { path: '/game/halli-galli/:roomId', name: 'HalliGalli', component: HalliGalli, props: true },
+  {
+    path: '/spectate/halli-galli/:roomId',
+    name: 'SpectateHalliGalli',
+    component: HalliGalli,
     props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
   },
 

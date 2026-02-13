@@ -45,6 +45,15 @@
             <div class="game-card-name">猜瓶盖</div>
             <div class="game-card-desc">2-6人猜数游戏</div>
           </div>
+          <div
+            class="game-card"
+            :class="{ selected: selectedGame === 'halli-galli' }"
+            @click="selectedGame = 'halli-galli'"
+          >
+            <div class="game-card-icon">&#128276;</div>
+            <div class="game-card-name">德国心脏病</div>
+            <div class="game-card-desc">2-6人抢铃游戏</div>
+          </div>
         </div>
       </div>
 
@@ -66,6 +75,10 @@
       <div v-if="selectedGame === 'bottle-cap'" class="game-config mt-2">
         <label>回合限时: {{ bcapTurnTime }}秒</label>
         <input type="range" class="slider" v-model.number="bcapTurnTime" min="6" max="30" step="2" />
+      </div>
+      <div v-if="selectedGame === 'halli-galli'" class="game-config mt-2">
+        <label>翻牌限时: {{ hgTurnTime }}秒</label>
+        <input type="range" class="slider" v-model.number="hgTurnTime" min="3" max="10" step="1" />
       </div>
 
       <div class="form-group mt-2">
@@ -153,7 +166,7 @@
 
       <!-- Rules -->
       <div class="rules mt-3">
-        <h3>{{ selectedGame === 'number-mine' ? '数字排雷规则' : selectedGame === 'bluff-card' ? '唬牌规则' : '猜瓶盖规则' }}</h3>
+        <h3>{{ selectedGame === 'number-mine' ? '数字排雷规则' : selectedGame === 'bluff-card' ? '唬牌规则' : selectedGame === 'bottle-cap' ? '猜瓶盖规则' : '德国心脏病规则' }}</h3>
         <ul v-if="selectedGame === 'number-mine'">
           <li>两位玩家各自设定一个 4 位数 (1000-9999)</li>
           <li>掷骰子决定先手，点数大者先猜</li>
@@ -173,7 +186,7 @@
           <li>乱序模式：从多 1 副牌中随机抽取，防止算牌</li>
           <li>最先出完手牌者获胜，最后剩牌者失败</li>
         </ul>
-        <ul v-else>
+        <ul v-else-if="selectedGame === 'bottle-cap'">
           <li>2-6 名玩家，掷骰子决定第一个庄家</li>
           <li>庄家在手中藏入 0 到 n-1 个瓶盖（n=玩家数）</li>
           <li>其他玩家逆时针依次猜庄家手中的瓶盖数</li>
@@ -181,6 +194,16 @@
           <li>猜中者输，成为下一轮庄家</li>
           <li>如果没人猜中，庄家输，继续当庄</li>
           <li>超时未操作将自动随机选择</li>
+        </ul>
+        <ul v-else>
+          <li>2-6 名玩家，使用 56 张水果牌（香蕉、草莓、柠檬、葡萄）</li>
+          <li>每张牌显示 1-5 个同种水果</li>
+          <li>轮流从自己的牌堆翻一张牌到弃牌堆（面朝上）</li>
+          <li>所有玩家面前的顶牌同时可见</li>
+          <li>当场上所有顶牌中恰好有 5 个同种水果时，抢按铃！</li>
+          <li>抢铃成功：赢得所有玩家弃牌堆的牌</li>
+          <li>抢铃失败（没有恰好 5 个）：每位其他玩家获得你 1 张牌作为惩罚</li>
+          <li>牌用完的玩家被淘汰，最后留下的玩家获胜</li>
         </ul>
       </div>
     </div>
@@ -213,6 +236,9 @@ const bcShuffleMode = ref(false);
 // Bottle cap config
 const bcapTurnTime = ref(12);
 
+// Halli Galli config
+const hgTurnTime = ref(5);
+
 // Room list
 const roomList = ref([]);
 const roomsLoading = ref(false);
@@ -222,12 +248,14 @@ const GAME_ROUTE_MAP = {
   'number-mine': { play: 'NumberMine', spectate: 'SpectateNumberMine' },
   'bluff-card': { play: 'BluffCard', spectate: 'SpectateBluffCard' },
   'bottle-cap': { play: 'BottleCap', spectate: 'SpectateBottleCap' },
+  'halli-galli': { play: 'HalliGalli', spectate: 'SpectateHalliGalli' },
 };
 
 function gameLabel(type) {
   if (type === 'number-mine') return '数字排雷';
   if (type === 'bluff-card') return '唬牌';
   if (type === 'bottle-cap') return '猜瓶盖';
+  if (type === 'halli-galli') return '德国心脏病';
   return type;
 }
 
@@ -260,6 +288,9 @@ function getConfig() {
   }
   if (selectedGame.value === 'bottle-cap') {
     return { turnTime: bcapTurnTime.value };
+  }
+  if (selectedGame.value === 'halli-galli') {
+    return { turnTime: hgTurnTime.value };
   }
   return {};
 }
@@ -432,7 +463,7 @@ onUnmounted(() => {
 
 .game-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -641,6 +672,11 @@ onUnmounted(() => {
 .badge-bottle-cap {
   background: rgba(212, 165, 60, 0.2);
   color: #d4a53c;
+}
+
+.badge-halli-galli {
+  background: rgba(225, 112, 85, 0.2);
+  color: #e17055;
 }
 
 .room-players {
