@@ -115,7 +115,9 @@
           <h3 class="section-title">我的手牌 ({{ myHand.length }}张)
             <span v-if="selectedCards.size" class="sel-hint">· 已选 {{ selectedCards.size }} 张</span>
           </h3>
-          <div class="hand-fan" ref="handFanRef">
+          <div class="hand-fan" ref="handFanRef"
+            @pointerdown.prevent="onDragStart"
+          >
             <div v-for="(row, ri) in handRows" :key="ri" class="hand-row">
               <div
                 v-for="(card, ci) in row"
@@ -123,6 +125,7 @@
                 class="poker-card-wrap"
                 :class="{ selected: selectedCards.has(card.id), dealing: isDealing }"
                 :style="fanStyle(ri * cardsPerRow + ci)"
+                :data-card-idx="ri * cardsPerRow + ci"
                 @click="toggleCard(card)"
               >
                 <div class="poker-card" :class="[cardColorClass(card), { 'is-joker': card.isJoker }]">
@@ -420,10 +423,74 @@ function fanStyle(idx) {
 }
 
 function toggleCard(card) {
+  if (dragging.mode) return; // ignore click after drag
   if (selectedCards.has(card.id)) {
     selectedCards.delete(card.id);
   } else {
     selectedCards.add(card.id);
+  }
+}
+
+// ── Swipe multi-select ──
+const dragging = reactive({ active: false, mode: null, touched: new Set() });
+
+function getCardIdFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  const wrap = el.closest('.poker-card-wrap');
+  if (!wrap || !handFanRef.value?.contains(wrap)) return null;
+  const idx = parseInt(wrap.dataset.cardIdx, 10);
+  if (isNaN(idx)) return null;
+  const flatIdx = idx;
+  const rows = handRows.value;
+  let count = 0;
+  for (const row of rows) {
+    for (const card of row) {
+      if (count === flatIdx) return card.id;
+      count++;
+    }
+  }
+  return null;
+}
+
+function onDragStart(e) {
+  const cardId = getCardIdFromPoint(e.clientX, e.clientY);
+  if (!cardId) return;
+  dragging.active = true;
+  dragging.mode = selectedCards.has(cardId) ? 'deselect' : 'select';
+  dragging.touched.clear();
+  applyDrag(cardId);
+  document.addEventListener('pointermove', onDragMove);
+  document.addEventListener('pointerup', onDragEnd);
+  document.addEventListener('pointercancel', onDragEnd);
+}
+
+function onDragMove(e) {
+  if (!dragging.active) return;
+  const cardId = getCardIdFromPoint(e.clientX, e.clientY);
+  if (cardId) applyDrag(cardId);
+}
+
+function onDragEnd() {
+  document.removeEventListener('pointermove', onDragMove);
+  document.removeEventListener('pointerup', onDragEnd);
+  document.removeEventListener('pointercancel', onDragEnd);
+  if (!dragging.active) { dragging.mode = null; return; }
+  dragging.active = false;
+  if (dragging.touched.size <= 1) {
+    dragging.mode = null;
+    return;
+  }
+  setTimeout(() => { dragging.mode = null; }, 0);
+}
+
+function applyDrag(cardId) {
+  if (dragging.touched.has(cardId)) return;
+  dragging.touched.add(cardId);
+  if (dragging.mode === 'select') {
+    selectedCards.add(cardId);
+  } else {
+    selectedCards.delete(cardId);
   }
 }
 
@@ -990,6 +1057,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 24px;
   padding: 16px 0 4px;
+  touch-action: pan-y;
 }
 
 .hand-row {
