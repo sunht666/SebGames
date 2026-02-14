@@ -400,6 +400,7 @@ function handleServerMessage(msg) {
       currentTurn.value = msg.playerIndex;
       currentTurnName.value = msg.playerName || '';
       if (msg.tableState) playerList.value = msg.tableState;
+      if (msg.playOrder) playOrder.value = msg.playOrder;
       bellLocked.value = !!msg.bellLocked;
       if (msg.timeLimit) startTurnTimer(msg.timeLimit);
       break;

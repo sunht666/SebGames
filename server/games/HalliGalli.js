@@ -526,6 +526,7 @@ class HalliGalli extends BaseGame {
       timeLimit: this.turnTimeLimit,
       tableState: this.getTableState(),
       bellLocked: this.bellLocked,
+      playOrder: this.playOrder,
     });
 
     // Auto-flip on timeout
