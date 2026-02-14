@@ -94,11 +94,13 @@
 
       <!-- Playing -->
       <div v-else-if="gameState === 'PLAYING'" class="play-area fade-in">
+        <PlayerBar ref="playerBarRef" :players="players" :my-index="playerIndex" @send-emoji="onSendEmoji" />
         <div class="turn-info">
           <span v-if="!spectateMode && isMyTurn" class="turn-text turn-mine">轮到你落子</span>
           <span v-else-if="!spectateMode" class="turn-text turn-other">对手思考中...</span>
           <span v-else class="turn-text turn-other">{{ players[currentTurn]?.name }} 思考中...</span>
           <span class="move-counter">第 {{ moveCount + 1 }} 手</span>
+          <button v-if="canRequestUndo" class="btn btn-outline btn-sm undo-btn" @click="requestUndo">悔棋</button>
         </div>
 
         <div class="board-container">
@@ -208,6 +210,28 @@
         <button class="btn btn-primary btn-lg mt-3" @click="leaveRoom">返回大厅</button>
       </div>
 
+      <!-- Undo request overlay -->
+      <div v-if="undoPending" class="undo-overlay">
+        <div class="undo-modal">
+          <template v-if="spectateMode">
+            <p class="undo-text">{{ players[undoRequesterIdx]?.name }} 请求悔棋</p>
+            <p class="undo-countdown">{{ undoCountdown }}s</p>
+          </template>
+          <template v-else-if="undoRequesterIdx === playerIndex">
+            <p class="undo-text">等待对方回应悔棋请求...</p>
+            <p class="undo-countdown">{{ undoCountdown }}s</p>
+          </template>
+          <template v-else>
+            <p class="undo-text">{{ players[undoRequesterIdx]?.name }} 请求悔棋</p>
+            <p class="undo-countdown">{{ undoCountdown }}s</p>
+            <div class="undo-actions">
+              <button class="btn btn-success" @click="respondUndo(true)">同意</button>
+              <button class="btn btn-outline" @click="respondUndo(false)">拒绝</button>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- Error toast -->
       <div v-if="errorMsg" class="toast-error" @click="errorMsg = ''">
         {{ errorMsg }}
@@ -231,6 +255,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
+import PlayerBar from '../components/PlayerBar.vue';
 
 const props = defineProps({ roomId: String, spectateMode: { type: Boolean, default: false } });
 const router = useRouter();
@@ -259,11 +284,21 @@ const spectatorCount = ref(0);
 const dissolveMessage = ref('');
 const kickTarget = ref(-1);
 const hasJoinedRoom = ref(false);
+const playerBarRef = ref(null);
 
 // Dice
 const diceValues = reactive([null, null]);
 const diceRolling = ref(false);
 const diceTie = ref(false);
+
+// Undo
+const undoPending = ref(false);
+const undoRequesterIdx = ref(-1);
+const undoCountdown = ref(0);
+let undoCountdownInterval = null;
+const myLastMoveCanUndo = ref(false);
+const undoWindowOpen = ref(false);
+let undoWindowTimer = null;
 
 // Timer
 let timerInterval = null;
@@ -279,6 +314,15 @@ const starPoints = [
 const playerCount = computed(() => players.filter(p => p.name).length);
 const isMyTurn = computed(() => currentTurn.value === playerIndex.value);
 const isWinner = computed(() => winner.value === playerIndex.value);
+
+const canRequestUndo = computed(() => {
+  if (props.spectateMode) return false;
+  if (undoPending.value) return false;
+  if (isMyTurn.value) return false;
+  if (!myLastMoveCanUndo.value) return false;
+  if (!undoWindowOpen.value) return false;
+  return true;
+});
 
 const timerClass = computed(() => {
   if (timeLeft.value <= 5) return 'timer-danger';
@@ -321,10 +365,34 @@ function doKick() {
   }
 }
 
+function onSendEmoji(emoji) { send({ type: 'send_emoji', emoji }); }
+
+function requestUndo() {
+  send({ type: 'request_undo' });
+}
+
+function respondUndo(accept) {
+  send({ type: 'respond_undo', accept });
+}
+
+function startUndoCountdown() {
+  clearUndoCountdown();
+  undoCountdown.value = 10;
+  undoCountdownInterval = setInterval(() => {
+    undoCountdown.value--;
+    if (undoCountdown.value <= 0) clearUndoCountdown();
+  }, 1000);
+}
+
+function clearUndoCountdown() {
+  if (undoCountdownInterval) { clearInterval(undoCountdownInterval); undoCountdownInterval = null; }
+}
+
 function placeStone(row, col) {
   if (props.spectateMode) return;
   if (gameState.value !== 'PLAYING') return;
   if (!isMyTurn.value) return;
+  if (undoPending.value) return;
   if (board[row][col] !== 0) return;
   send({ type: 'place_stone', row, col });
 }
@@ -340,9 +408,9 @@ function leaveRoom() {
 }
 
 // ── Timer ──
-function startTimer() {
+function startTimer(fromMs) {
   stopTimer();
-  timeLeft.value = Math.round(turnTimeLimit.value / 1000);
+  timeLeft.value = fromMs ? Math.ceil(fromMs / 1000) : Math.round(turnTimeLimit.value / 1000);
   timerInterval = setInterval(() => {
     timeLeft.value--;
     if (timeLeft.value <= 0) {
@@ -497,17 +565,63 @@ function handleServerMessage(msg) {
       currentTurn.value = msg.playerIndex;
       if (msg.timeLimit) turnTimeLimit.value = msg.timeLimit;
       startTimer();
+      // Open undo window if it's opponent's turn and I can undo
+      if (!props.spectateMode && msg.playerIndex !== playerIndex.value && myLastMoveCanUndo.value) {
+        undoWindowOpen.value = true;
+        clearTimeout(undoWindowTimer);
+        undoWindowTimer = setTimeout(() => { undoWindowOpen.value = false; }, 5000);
+      } else {
+        undoWindowOpen.value = false;
+      }
       break;
 
     case 'stone_placed': {
       board[msg.row][msg.col] = msg.stone;
       moveCount.value = msg.moveNumber;
       history.push({ playerIndex: msg.playerIndex, row: msg.row, col: msg.col, moveNumber: msg.moveNumber });
+      // Track undo eligibility
+      if (!props.spectateMode) {
+        if (msg.playerIndex === playerIndex.value) {
+          myLastMoveCanUndo.value = true;
+        } else {
+          myLastMoveCanUndo.value = false; // opponent moved, can't undo previous
+        }
+      }
       break;
     }
 
     case 'turn_timeout':
       stopTimer();
+      myLastMoveCanUndo.value = false;
+      undoWindowOpen.value = false;
+      break;
+
+    case 'undo_requested':
+      undoPending.value = true;
+      undoRequesterIdx.value = msg.playerIndex;
+      undoWindowOpen.value = false;
+      stopTimer();
+      startUndoCountdown();
+      break;
+
+    case 'undo_accepted':
+      undoPending.value = false;
+      clearUndoCountdown();
+      board[msg.row][msg.col] = 0;
+      history.pop();
+      moveCount.value--;
+      if (!props.spectateMode && msg.playerIndex === playerIndex.value) {
+        myLastMoveCanUndo.value = false;
+      }
+      // turn_start will follow from server
+      break;
+
+    case 'undo_rejected':
+      undoPending.value = false;
+      clearUndoCountdown();
+      if (msg.timeRemaining != null) {
+        startTimer(msg.timeRemaining);
+      }
       break;
 
     case 'game_over':
@@ -549,6 +663,10 @@ function handleServerMessage(msg) {
 
     case 'player_index_update':
       playerIndex.value = msg.playerIndex;
+      break;
+
+    case 'player_emoji':
+      playerBarRef.value?.showEmoji(msg.playerIndex, msg.emoji);
       break;
 
     case 'error':
@@ -598,15 +716,21 @@ function restoreState(msg) {
   }
 
   if (msg.state === 'PLAYING') {
-    if (msg.turnTimeRemaining != null) {
-      timeLeft.value = Math.ceil(msg.turnTimeRemaining / 1000);
+    if (msg.undoRequester >= 0) {
+      undoPending.value = true;
+      undoRequesterIdx.value = msg.undoRequester;
+    } else if (msg.turnTimeRemaining != null) {
+      startTimer(msg.turnTimeRemaining);
+    } else {
+      startTimer();
     }
-    startTimer();
   }
 }
 
 function cleanup() {
   stopTimer();
+  clearUndoCountdown();
+  clearTimeout(undoWindowTimer);
   if (ws.value) {
     ws.value.onclose = null;
     ws.value.close();
@@ -1141,5 +1265,74 @@ onUnmounted(() => {
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(108, 92, 231, 0.4); }
   50% { box-shadow: 0 0 0 6px rgba(108, 92, 231, 0); }
+}
+
+/* ── Undo ── */
+.undo-btn {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.undo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  animation: kickFadeIn 0.2s ease-out;
+}
+
+.undo-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px;
+  text-align: center;
+  max-width: 320px;
+  width: 85%;
+  animation: kickPopIn 0.25s cubic-bezier(0.17, 0.67, 0.29, 1.2) both;
+}
+
+.undo-text {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.undo-countdown {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 16px;
+}
+
+.undo-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.undo-actions .btn {
+  padding: 8px 24px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-success {
+  background: var(--success);
+  color: #fff;
+  border: none;
+}
+
+.btn-success:hover {
+  filter: brightness(1.1);
 }
 </style>

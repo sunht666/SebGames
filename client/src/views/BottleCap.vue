@@ -71,6 +71,7 @@
 
       <!-- In-game states: HIDING / GUESSING / ROUND_RESULT -->
       <div v-else-if="['HIDING', 'GUESSING', 'ROUND_RESULT'].includes(gameState)" class="play-area fade-in">
+        <PlayerBar ref="playerBarRef" :players="playerList" :my-index="playerIndex" @send-emoji="onSendEmoji" />
         <!-- Player strip -->
         <div class="player-strip">
           <div
@@ -282,6 +283,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import PlayerBar from '../components/PlayerBar.vue';
 
 const props = defineProps({ roomId: String, spectateMode: { type: Boolean, default: false } });
 const router = useRouter();
@@ -320,6 +322,7 @@ const selectedCapCount = ref(0);
 const selectedGuess = ref(-1);
 const handFlipped = ref(false);
 const guessNotify = ref('');
+const playerBarRef = ref(null);
 const turnTimeLimit = ref(12000);
 const turnTimeLeft = ref(0);
 let turnCountdown = null;
@@ -385,6 +388,8 @@ function doKick() {
     kickTarget.value = -1;
   }
 }
+
+function onSendEmoji(emoji) { send({ type: 'send_emoji', emoji }); }
 
 function hideCaps() {
   send({ type: 'hide_caps', count: selectedCapCount.value });
@@ -628,6 +633,10 @@ function handleServerMessage(msg) {
 
     case 'spectator_count':
       spectatorCount.value = msg.count;
+      break;
+
+    case 'player_emoji':
+      playerBarRef.value?.showEmoji(msg.playerIndex, msg.emoji);
       break;
 
     case 'error':

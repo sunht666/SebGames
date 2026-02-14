@@ -22,6 +22,12 @@ class Gomoku extends BaseGame {
     this.board = this.createBoard();
     this.moveCount = 0;
 
+    // Undo state
+    this.undoRequester = -1;
+    this.undoTimer = null;
+    this.turnPausedRemaining = null;
+    this.canUndo = [false, false]; // per player, reset after undo or opponent moves
+
     // Configurable turn time: 15-60s, default 30s
     const t = parseInt(config.turnTime, 10);
     this.turnTimeLimit = (!isNaN(t) && t >= 15 && t <= 60) ? t * 1000 : 30000;
@@ -105,6 +111,7 @@ class Gomoku extends BaseGame {
 
     this.players[idx] = null;
     this.clearTurnTimer();
+    this.clearUndoState();
 
     const other = 1 - idx;
 
@@ -152,6 +159,12 @@ class Gomoku extends BaseGame {
         break;
       case 'place_stone':
         this.placeStone(playerId, msg.row, msg.col);
+        break;
+      case 'request_undo':
+        this.handleRequestUndo(playerId);
+        break;
+      case 'respond_undo':
+        this.handleRespondUndo(playerId, msg.accept);
         break;
     }
   }
@@ -250,6 +263,11 @@ class Gomoku extends BaseGame {
     const idx = this.getPlayerIndex(playerId);
     if (idx === -1 || this.state !== STATES.PLAYING) return;
 
+    if (this.undoRequester >= 0) {
+      this.sendTo(idx, { type: 'error', message: '悔棋申请中，请等待' });
+      return;
+    }
+
     if (idx !== this.currentTurn) {
       this.sendTo(idx, { type: 'error', message: '还没有轮到你' });
       return;
@@ -326,7 +344,9 @@ class Gomoku extends BaseGame {
       return;
     }
 
-    // Next turn
+    // Next turn — the player who just placed can now request undo
+    this.canUndo[playerIndex] = true;
+    this.canUndo[1 - playerIndex] = false;
     this.currentTurn = 1 - this.currentTurn;
     this.startTurn();
   }
@@ -392,6 +412,93 @@ class Gomoku extends BaseGame {
     return null;
   }
 
+  // ── Undo ──
+
+  handleRequestUndo(playerId) {
+    const idx = this.getPlayerIndex(playerId);
+    if (idx === -1 || this.state !== STATES.PLAYING) return;
+    if (this.undoRequester >= 0) return;
+    if (idx === this.currentTurn) return; // it's your turn, nothing to undo
+    if (!this.canUndo[idx]) return;
+    if (this.history.length === 0) return;
+    if (this.history[this.history.length - 1].playerIndex !== idx) return;
+
+    // Must be within 5s of opponent's turn
+    const elapsed = Date.now() - this.turnStartTime;
+    if (elapsed > 5000) {
+      this.sendTo(idx, { type: 'error', message: '悔棋时间已过' });
+      return;
+    }
+
+    // Pause turn timer
+    this.clearTurnTimer();
+    this.turnPausedRemaining = Math.max(0, this.turnTimeLimit - elapsed);
+    this.undoRequester = idx;
+
+    this.broadcast({
+      type: 'undo_requested',
+      playerIndex: idx,
+      playerName: this.players[idx].name,
+    });
+
+    // Auto-reject after 10s
+    this.undoTimer = setTimeout(() => {
+      this.resolveUndo(false, true);
+    }, 10000);
+  }
+
+  handleRespondUndo(playerId, accept) {
+    if (this.undoRequester < 0) return;
+    const idx = this.getPlayerIndex(playerId);
+    if (idx !== this.currentTurn) return; // only the opponent can respond
+    this.resolveUndo(!!accept, false);
+  }
+
+  resolveUndo(accept, isTimeout) {
+    if (this.undoRequester < 0) return;
+    if (this.undoTimer) { clearTimeout(this.undoTimer); this.undoTimer = null; }
+
+    const requester = this.undoRequester;
+    this.undoRequester = -1;
+
+    if (accept) {
+      const lastMove = this.history.pop();
+      this.board[lastMove.row][lastMove.col] = 0;
+      this.moveCount--;
+      this.currentTurn = requester;
+      this.canUndo[requester] = false;
+
+      this.broadcast({
+        type: 'undo_accepted',
+        playerIndex: requester,
+        row: lastMove.row,
+        col: lastMove.col,
+      });
+
+      this.startTurn();
+    } else {
+      const remaining = this.turnPausedRemaining || this.turnTimeLimit;
+      this.turnPausedRemaining = null;
+
+      this.broadcast({
+        type: 'undo_rejected',
+        playerIndex: requester,
+        timeout: isTimeout,
+        timeRemaining: remaining,
+      });
+
+      // Resume opponent's turn with remaining time
+      this.turnStartTime = Date.now();
+      this.turnTimer = setTimeout(() => this.handleTimeout(), remaining + 1000);
+    }
+  }
+
+  clearUndoState() {
+    this.undoRequester = -1;
+    if (this.undoTimer) { clearTimeout(this.undoTimer); this.undoTimer = null; }
+    this.turnPausedRemaining = null;
+  }
+
   // ── Helpers ──
 
   clearTurnTimer() {
@@ -419,12 +526,15 @@ class Gomoku extends BaseGame {
       winLine: this.winLine,
       spectatorCount: this.spectators.length,
       turnTimeLimit: this.turnTimeLimit,
+      undoRequester: this.undoRequester,
     };
     if (this.players[0]?.dice != null) {
       msg.dice = [this.players[0].dice, this.players[1].dice];
     }
     if (this.state === STATES.PLAYING && this.turnStartTime) {
-      msg.turnTimeRemaining = Math.max(0, this.turnTimeLimit - (Date.now() - this.turnStartTime));
+      msg.turnTimeRemaining = this.undoRequester >= 0
+        ? this.turnPausedRemaining
+        : Math.max(0, this.turnTimeLimit - (Date.now() - this.turnStartTime));
     }
     this.sendTo(playerIndex, msg);
   }
@@ -446,6 +556,7 @@ class Gomoku extends BaseGame {
       winLine: this.winLine,
       spectatorCount: this.spectators.length,
       turnTimeLimit: this.turnTimeLimit,
+      undoRequester: this.undoRequester,
     };
     if (this.players[0]?.dice != null) {
       state.dice = [this.players[0].dice, this.players[1].dice];

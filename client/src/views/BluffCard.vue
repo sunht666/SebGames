@@ -55,6 +55,7 @@
 
       <!-- Playing -->
       <div v-else-if="gameState === 'PLAYING'" class="play-area fade-in">
+        <PlayerBar ref="playerBarRef" :players="playerList" :my-index="playerIndex" @send-emoji="onSendEmoji" />
         <!-- Player strip -->
         <div class="player-strip">
           <div
@@ -322,6 +323,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import PlayerBar from '../components/PlayerBar.vue';
 
 const props = defineProps({ roomId: String, spectateMode: { type: Boolean, default: false } });
 const router = useRouter();
@@ -360,6 +362,7 @@ const bluffConfirm = ref(false);
 const passNotify = ref('');
 const winNotify = ref('');
 const handFanRef = ref(null);
+const playerBarRef = ref(null);
 const isDealing = ref(false);
 const isCollecting = ref(false);
 const roomDeckCount = ref(1);
@@ -557,6 +560,7 @@ function doPlayCards() {
 
 function challenge() { send({ type: 'challenge' }); }
 function pass() { send({ type: 'pass' }); }
+function onSendEmoji(emoji) { send({ type: 'send_emoji', emoji }); }
 
 function leaveRoom() {
   send({ type: 'leave_room' });
@@ -788,6 +792,10 @@ function handleServerMessage(msg) {
       break;
 
     case 'room_left': break;
+
+    case 'player_emoji':
+      playerBarRef.value?.showEmoji(msg.playerIndex, msg.emoji);
+      break;
 
     case 'error':
       showError(msg.message);

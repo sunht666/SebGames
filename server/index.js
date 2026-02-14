@@ -344,6 +344,16 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'send_emoji': {
+        if (!currentRoom || isSpectator) return;
+        const idx = currentRoom.players.findIndex(p => p && p.id === playerId);
+        if (idx === -1) return;
+        const allowed = ['😀','😂','🥰','😎','😤','😭','🤔','👍'];
+        if (!allowed.includes(msg.emoji)) return;
+        currentRoom.broadcast({ type: 'player_emoji', playerIndex: idx, emoji: msg.emoji });
+        break;
+      }
+
       default: {
         // Delegate game-specific messages to the room
         if (currentRoom && !isSpectator) {

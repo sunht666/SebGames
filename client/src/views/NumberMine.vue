@@ -154,6 +154,7 @@
 
       <!-- Playing -->
       <div v-else-if="gameState === 'PLAYING'" class="play-area fade-in">
+        <PlayerBar ref="playerBarRef" :players="players" :my-index="playerIndex" @send-emoji="onSendEmoji" />
         <div class="play-grid" :class="{ 'spec-grid': spectateMode }">
           <!-- Left: My info + Guess input (hidden for spectators) -->
           <div v-if="!spectateMode" class="play-left">
@@ -338,6 +339,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import PlayerBar from '../components/PlayerBar.vue';
 
 const props = defineProps({ roomId: String, spectateMode: { type: Boolean, default: false } });
 const router = useRouter();
@@ -364,6 +366,7 @@ const spectatorCount = ref(0);
 const dissolveMessage = ref('');
 const kickTarget = ref(-1);
 const hasJoinedRoom = ref(false);
+const playerBarRef = ref(null);
 
 // Setup
 const myNumber = ref(null);
@@ -514,6 +517,8 @@ function doKick() {
     kickTarget.value = -1;
   }
 }
+
+function onSendEmoji(emoji) { send({ type: 'send_emoji', emoji }); }
 
 function randomNumber() {
   send({ type: 'set_number', random: true });
@@ -905,6 +910,10 @@ function handleServerMessage(msg) {
       break;
 
     case 'room_left':
+      break;
+
+    case 'player_emoji':
+      playerBarRef.value?.showEmoji(msg.playerIndex, msg.emoji);
       break;
 
     case 'error':
