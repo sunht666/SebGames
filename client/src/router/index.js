@@ -5,6 +5,7 @@ import NumberMine from '../views/NumberMine.vue';
 const BluffCard = () => import('../views/BluffCard.vue');
 const BottleCap = () => import('../views/BottleCap.vue');
 const HalliGalli = () => import('../views/HalliGalli.vue');
+const Gomoku = () => import('../views/Gomoku.vue');
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
@@ -42,6 +43,15 @@ const routes = [
     path: '/spectate/halli-galli/:roomId',
     name: 'SpectateHalliGalli',
     component: HalliGalli,
+    props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
+  },
+
+  // Gomoku
+  { path: '/game/gomoku/:roomId', name: 'Gomoku', component: Gomoku, props: true },
+  {
+    path: '/spectate/gomoku/:roomId',
+    name: 'SpectateGomoku',
+    component: Gomoku,
     props: (route) => ({ roomId: route.params.roomId, spectateMode: true }),
   },
 

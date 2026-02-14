@@ -2,12 +2,14 @@ const NumberMine = require('./NumberMine');
 const BluffCard = require('./BluffCard');
 const BottleCap = require('./BottleCap');
 const HalliGalli = require('./HalliGalli');
+const Gomoku = require('./Gomoku');
 
 const GAME_TYPES = {
   'number-mine': NumberMine,
   'bluff-card': BluffCard,
   'bottle-cap': BottleCap,
   'halli-galli': HalliGalli,
+  'gomoku': Gomoku,
 };
 
 function createGame(roomId, gameType, config = {}) {
