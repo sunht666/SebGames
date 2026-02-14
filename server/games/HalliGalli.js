@@ -294,7 +294,7 @@ class HalliGalli extends BaseGame {
       if (this.state === STATES.PLAYING) {
         this.advanceTurn();
       }
-    }, 1200);
+    }, 3000);
   }
 
   // ── Bell ──

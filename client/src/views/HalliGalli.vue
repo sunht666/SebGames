@@ -84,32 +84,12 @@
           </div>
         </div>
 
-        <!-- Table area: circular layout with bell in center -->
+        <!-- Table area -->
         <div class="table-area">
-          <!-- Bell in center -->
-          <div class="bell-container">
-            <button
-              class="bell-btn"
-              :class="{ pressed: bellPressed, locked: bellLocked, shaking: bellShaking }"
-              :disabled="spectateMode || bellLocked || !playOrder.includes(playerIndex)"
-              @click="ringBell"
-            >
-              <div class="bell-body">
-                <div class="bell-dome"></div>
-                <div class="bell-rim"></div>
-                <div class="bell-clapper"></div>
-              </div>
-              <div class="bell-base"></div>
-            </button>
-            <div v-if="bellResultText" class="bell-result-text" :class="bellResultClass">
-              {{ bellResultText }}
-            </div>
-          </div>
-
-          <!-- Player card slots around the bell -->
-          <div class="table-ring" :class="'ring-' + activePlayerCount">
+          <!-- Face-up cards row -->
+          <div class="table-cards">
             <div
-              v-for="(pi, slotIdx) in playOrder"
+              v-for="pi in playOrder"
               :key="'tc-' + pi"
               class="table-card-slot"
               :class="{
@@ -117,12 +97,8 @@
                 'just-flipped': lastFlipPlayer === pi,
                 me: pi === playerIndex && !spectateMode,
               }"
-              :style="slotPosition(slotIdx, playOrder.length)"
             >
-              <div class="tc-label">
-                <span class="tc-name" :class="{ 'tc-active': currentTurn === pi }">{{ playerList[pi]?.name }}</span>
-                <span class="tc-pile">{{ playerList[pi]?.drawCount || 0 }}张</span>
-              </div>
+              <div class="tc-name" :class="{ 'tc-active': currentTurn === pi }">{{ playerList[pi]?.name }}</div>
               <!-- Face-up card -->
               <div v-if="playerList[pi]?.topCard" class="fruit-card" :class="'fc-' + playerList[pi].topCard.fruit">
                 <div class="fc-corner fc-tl">
@@ -139,14 +115,32 @@
                   <span class="fc-fruit-sm">{{ fruitEmoji(playerList[pi].topCard.fruit) }}</span>
                 </div>
               </div>
-              <!-- Draw pile (card back) behind face-up card -->
-              <div v-if="playerList[pi]?.drawCount > 0" class="card-back-stack">
-                <div class="card-back"></div>
-              </div>
               <!-- No face-up card yet -->
-              <div v-if="!playerList[pi]?.topCard" class="fruit-card-empty">
+              <div v-else class="fruit-card-empty">
                 <span class="empty-text">未翻牌</span>
               </div>
+              <div class="tc-pile">余{{ playerList[pi]?.drawCount || 0 }}张</div>
+            </div>
+          </div>
+
+          <!-- Bell -->
+          <div class="bell-section">
+            <button
+              class="bell-btn"
+              :class="{ pressed: bellPressed, locked: bellLocked, shaking: bellShaking }"
+              :disabled="spectateMode || bellLocked || !playOrder.includes(playerIndex)"
+              @click="ringBell"
+            >
+              <div class="bell-body">
+                <div class="bell-dome"></div>
+                <div class="bell-rim"></div>
+                <div class="bell-clapper"></div>
+              </div>
+              <div class="bell-base"></div>
+            </button>
+            <div class="bell-hint" v-if="!bellLocked && !spectateMode && playOrder.includes(playerIndex)">看到5个同种水果？拍铃！</div>
+            <div v-if="bellResultText" class="bell-result-text" :class="bellResultClass">
+              {{ bellResultText }}
             </div>
           </div>
         </div>
@@ -202,20 +196,6 @@
         </div>
       </div>
 
-      <!-- Bell result overlay -->
-      <div v-if="bellOverlay" class="bell-overlay" @click="bellOverlay = null">
-        <div class="bell-overlay-card" :class="bellOverlay.correct ? 'bo-correct' : 'bo-wrong'" @click.stop>
-          <div class="bo-icon">{{ bellOverlay.correct ? '&#9989;' : '&#10060;' }}</div>
-          <h3>{{ bellOverlay.correct ? '抢铃成功！' : '抢铃失败！' }}</h3>
-          <p class="bo-who">{{ bellOverlay.ringerName }}</p>
-          <p v-if="bellOverlay.correct" class="bo-detail text-success">
-            场上恰好有 5 个 {{ fruitName(bellOverlay.fruit) }}，赢得 {{ bellOverlay.cardsWon }} 张牌
-          </p>
-          <p v-else class="bo-detail text-danger">
-            没有恰好 5 个同种水果，罚交 {{ bellOverlay.cardsLost }} 张牌
-          </p>
-        </div>
-      </div>
     </main>
   </div>
 </template>
@@ -253,7 +233,6 @@ const bellPressed = ref(false);
 const bellShaking = ref(false);
 const bellResultText = ref('');
 const bellResultClass = ref('');
-const bellOverlay = ref(null);
 const lastFlipPlayer = ref(-1);
 const infoNotify = ref('');
 const turnTimeLimit = ref(5000);
@@ -263,29 +242,10 @@ let turnCountdown = null;
 // ── Computed ──
 const isMyTurn = computed(() => currentTurn.value === playerIndex.value);
 const timerPercent = computed(() => turnTimeLimit.value > 0 ? (turnTimeLeft.value / (turnTimeLimit.value / 1000)) * 100 : 0);
-const activePlayerCount = computed(() => playOrder.value.length);
-
-// Position player card slots in a ring around the bell
-function slotPosition(slotIdx, total) {
-  // On mobile, use a simple flex layout (handled by CSS)
-  if (window.innerWidth <= 700) return {};
-  const radius = total <= 3 ? 140 : total <= 4 ? 160 : 170;
-  // Start from top, distribute evenly clockwise
-  const angle = (slotIdx / total) * 360 - 90;
-  const rad = (angle * Math.PI) / 180;
-  const x = Math.cos(rad) * radius;
-  const y = Math.sin(rad) * radius;
-  return { transform: `translate(${x}px, ${y}px)` };
-}
 
 function fruitEmoji(fruit) {
   const map = { banana: '\u{1F34C}', strawberry: '\u{1F353}', lime: '\u{1F34B}', plum: '\u{1F347}' };
   return map[fruit] || '';
-}
-
-function fruitName(fruit) {
-  const map = { banana: '香蕉', strawberry: '草莓', lime: '柠檬', plum: '葡萄' };
-  return map[fruit] || fruit;
 }
 
 function startTurnTimer(ms) {
@@ -457,17 +417,16 @@ function handleServerMessage(msg) {
       if (msg.tableState) playerList.value = msg.tableState;
 
       if (msg.correct) {
-        bellResultText.value = `${msg.ringerName} 抢铃成功！+${msg.cardsWon}`;
+        bellResultText.value = `${msg.ringerName} 抢铃成功！+${msg.cardsWon}张`;
         bellResultClass.value = 'br-correct';
         bellShaking.value = false;
       } else {
-        bellResultText.value = `${msg.ringerName} 抢错了！-${msg.cardsLost}`;
+        bellResultText.value = `${msg.ringerName} 抢错了！罚${msg.cardsLost}张`;
         bellResultClass.value = 'br-wrong';
         bellShaking.value = true;
         setTimeout(() => { bellShaking.value = false; }, 500);
       }
-      bellOverlay.value = msg;
-      setTimeout(() => { bellResultText.value = ''; bellOverlay.value = null; }, 2500);
+      setTimeout(() => { bellResultText.value = ''; }, 2500);
       break;
 
     case 'player_eliminated':
@@ -732,35 +691,29 @@ onUnmounted(() => {
    TABLE AREA
    ═══════════════════════════════════════════════ */
 .table-area {
-  background: radial-gradient(ellipse at center, rgba(30,100,50,0.45) 0%, rgba(15,60,30,0.35) 100%);
+  background: radial-gradient(ellipse at center, rgba(30,100,50,0.5) 0%, rgba(12,50,25,0.4) 100%);
   border: 2px solid rgba(40,120,60,0.35);
-  border-radius: 50%;
-  padding: 40px;
-  margin: 0 auto 16px;
-  width: 460px; height: 460px;
-  position: relative;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 0 60px rgba(0,0,0,0.15), 0 4px 20px rgba(0,0,0,0.1);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 20px;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.1);
 }
 
-/* Ring of player cards positioned around the bell */
-.table-ring {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
+/* Face-up cards row */
+.table-cards {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  justify-content: center;
 }
 
 .table-card-slot {
-  position: absolute;
   display: flex; flex-direction: column;
-  align-items: center; gap: 6px;
-  transition: all 0.3s;
+  align-items: center; gap: 5px;
+  transition: transform 0.3s;
 }
-.table-card-slot.active .tc-name {
-  color: var(--primary-light);
-}
-.table-card-slot.me .tc-name {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.table-card-slot.active {
+  transform: translateY(-4px);
 }
 .table-card-slot.just-flipped .fruit-card {
   animation: cardFlipIn 0.5s ease-out;
@@ -771,12 +724,9 @@ onUnmounted(() => {
   100% { transform: perspective(600px) rotateY(0) scale(1); opacity: 1; }
 }
 
-.tc-label {
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-}
 .tc-name {
   font-size: 0.78rem; font-weight: 700;
-  color: rgba(255,255,255,0.7); white-space: nowrap;
+  color: rgba(255,255,255,0.75); white-space: nowrap;
   max-width: 90px; overflow: hidden; text-overflow: ellipsis;
   transition: color 0.3s;
 }
@@ -784,8 +734,12 @@ onUnmounted(() => {
   color: #ffd700;
   text-shadow: 0 0 6px rgba(255,215,0,0.4);
 }
+.table-card-slot.me .tc-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .tc-pile {
-  font-size: 0.65rem; color: rgba(255,255,255,0.4);
+  font-size: 0.62rem; color: rgba(255,255,255,0.4);
 }
 
 /* ═══════════════════════════════════════════════
@@ -800,7 +754,6 @@ onUnmounted(() => {
     inset 0 1px 0 rgba(255,255,255,0.9);
   user-select: none;
   overflow: hidden;
-  z-index: 2;
 }
 
 /* Fruit-specific backgrounds */
@@ -875,57 +828,25 @@ onUnmounted(() => {
 .fc-lime .fc-count { color: #1a7a1a; }
 .fc-plum .fc-count { color: #6a0dad; }
 
-/* Card back (draw pile) */
-.card-back-stack {
-  position: absolute;
-  top: 24px; left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-}
-.card-back {
-  width: 88px; height: 124px;
-  border-radius: 10px;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      #2a5298 0px, #2a5298 4px,
-      #1e3a6e 4px, #1e3a6e 8px
-    );
-  border: 2px solid #1a2e5a;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  position: relative;
-}
-.card-back::before {
-  content: '';
-  position: absolute; inset: 5px;
-  border: 1.5px solid rgba(255,255,255,0.15);
-  border-radius: 6px;
-}
-.card-back::after {
-  content: '🃏';
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 1.6rem;
-  opacity: 0.4;
-}
-
 /* Empty card slot */
 .fruit-card-empty {
   width: 88px; height: 124px;
   border: 2px dashed rgba(255,255,255,0.18);
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  z-index: 2;
 }
 .empty-text { color: rgba(255,255,255,0.3); font-size: 0.8rem; }
 
 /* ═══════════════════════════════════════════════
    BELL
    ═══════════════════════════════════════════════ */
-.bell-container {
+.bell-section {
   display: flex; flex-direction: column;
   align-items: center; gap: 8px;
+}
+.bell-hint {
+  font-size: 0.72rem; color: rgba(255,255,255,0.45);
+  text-align: center;
 }
 
 .bell-btn {
@@ -1049,42 +970,6 @@ onUnmounted(() => {
 }
 
 /* ═══════════════════════════════════════════════
-   BELL RESULT OVERLAY
-   ═══════════════════════════════════════════════ */
-.bell-overlay {
-  position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
-  animation: overlayIn 0.3s ease-out;
-}
-@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
-
-.bell-overlay-card {
-  background: linear-gradient(145deg, var(--card) 0%, var(--surface) 100%);
-  border: 1.5px solid var(--border); border-radius: 16px;
-  padding: 28px 32px; text-align: center;
-  max-width: 380px; width: 90%;
-  animation: popUp 0.4s cubic-bezier(0.17,0.67,0.29,1.3) both;
-}
-@keyframes popUp {
-  0% { transform: scale(0.3) translateY(40px); opacity: 0; }
-  100% { transform: scale(1) translateY(0); opacity: 1; }
-}
-.bell-overlay-card.bo-correct {
-  border-color: var(--success);
-}
-.bell-overlay-card.bo-wrong {
-  border-color: var(--danger);
-}
-.bo-icon { font-size: 2.5rem; margin-bottom: 8px; }
-.bell-overlay-card h3 { font-size: 1.3rem; margin-bottom: 8px; }
-.bo-who {
-  font-size: 1.1rem; font-weight: 700;
-  color: var(--primary-light); margin-bottom: 8px;
-}
-.bo-detail { font-size: 0.95rem; font-weight: 600; }
-
-/* ═══════════════════════════════════════════════
    RANKINGS / GAME OVER
    ═══════════════════════════════════════════════ */
 .result-icon { font-size: 4rem; margin-bottom: 10px; }
@@ -1131,43 +1016,27 @@ onUnmounted(() => {
   .game-header { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
   .game-main { padding: 10px; }
 
-  .table-area {
-    width: 100%; height: auto;
-    border-radius: 16px;
-    padding: 16px; margin-bottom: 12px;
-  }
-  .table-ring {
-    position: relative;
-    display: flex; flex-wrap: wrap;
-    justify-content: center; gap: 12px;
-    margin-top: 16px;
-  }
-  .table-card-slot {
-    position: relative !important;
-    transform: none !important;
-  }
+  .table-area { padding: 14px; gap: 14px; }
+  .table-cards { gap: 10px; }
 
-  .fruit-card { width: 64px; height: 90px; }
-  .fruit-card-empty { width: 64px; height: 90px; }
-  .fc-count { font-size: 0.78rem; }
-  .fc-fruit-sm { font-size: 0.62rem; }
-  .fc-fruit-icon { font-size: 1.1rem; }
-  .fc-layout-1 .fc-fruit-icon { font-size: 1.5rem; }
-  .fc-layout-2 .fc-fruit-icon { font-size: 1.1rem; }
-  .fc-layout-3 .fc-fruit-icon { font-size: 0.95rem; }
-  .fc-layout-4 .fc-fruit-icon { font-size: 0.95rem; }
-  .fc-layout-5 .fc-fruit-icon { font-size: 0.85rem; }
+  .fruit-card { width: 68px; height: 96px; }
+  .fruit-card-empty { width: 68px; height: 96px; }
+  .fc-count { font-size: 0.8rem; }
+  .fc-fruit-sm { font-size: 0.65rem; }
+  .fc-fruit-icon { font-size: 1.15rem; }
+  .fc-layout-1 .fc-fruit-icon { font-size: 1.6rem; }
+  .fc-layout-2 .fc-fruit-icon { font-size: 1.2rem; }
+  .fc-layout-3 .fc-fruit-icon { font-size: 1rem; }
+  .fc-layout-4 .fc-fruit-icon { font-size: 1rem; }
+  .fc-layout-5 .fc-fruit-icon { font-size: 0.9rem; }
   .fc-tl { top: 3px; left: 4px; }
   .fc-br { bottom: 3px; right: 4px; }
-
-  .card-back-stack { display: none; }
 
   .bell-btn { width: 80px; height: 80px; }
   .bell-body { width: 36px; height: 36px; }
   .bell-dome { width: 34px; height: 28px; }
   .bell-rim { width: 38px; height: 6px; }
   .bell-base { width: 58px; height: 5px; }
-  .bell-container { margin-bottom: 8px; }
 
   .player-strip { gap: 6px; }
   .ps-item { min-width: 64px; padding: 8px 10px; }
@@ -1176,6 +1045,6 @@ onUnmounted(() => {
   .spec-tag { display: none; }
 
   .tc-name { font-size: 0.7rem; }
-  .tc-pile { font-size: 0.6rem; }
+  .tc-pile { font-size: 0.58rem; }
 }
 </style>
